@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react'
 import { Leva, button, useControls } from 'leva'
 import WatercolorViewport from '@/components/watercolor/WatercolorViewport'
-import type { BrushType, SimulationParams } from '@/lib/watercolor/WatercolorSimulation'
+import { DEFAULT_BINDER_PARAMS, type BrushType, type SimulationParams } from '@/lib/watercolor/WatercolorSimulation'
 
 type Tool = 'water' | 'pigment0' | 'pigment1' | 'pigment2'
 
@@ -58,6 +58,51 @@ export default function Home() {
     maxSubsteps: { label: 'Max Substeps', value: 4, min: 1, max: 8, step: 1 },
   })
 
+  const binderControls = useControls('Binder Dynamics', {
+    injection: {
+      label: 'Binder Charge',
+      value: DEFAULT_BINDER_PARAMS.injection,
+      min: 0,
+      max: 2,
+      step: 0.01,
+    },
+    diffusion: {
+      label: 'Diffusion',
+      value: DEFAULT_BINDER_PARAMS.diffusion,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    decay: {
+      label: 'Drying Rate',
+      value: DEFAULT_BINDER_PARAMS.decay,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    elasticity: {
+      label: 'Elastic Coupling',
+      value: DEFAULT_BINDER_PARAMS.elasticity,
+      min: 0,
+      max: 3,
+      step: 0.05,
+    },
+    viscosity: {
+      label: 'Viscous Drag',
+      value: DEFAULT_BINDER_PARAMS.viscosity,
+      min: 0,
+      max: 3,
+      step: 0.05,
+    },
+    buoyancy: {
+      label: 'Buoyancy',
+      value: DEFAULT_BINDER_PARAMS.buoyancy,
+      min: -1,
+      max: 1,
+      step: 0.01,
+    },
+  })
+
   const reservoirControls = useControls('Brush Reservoir', {
     waterCapacityWater: { label: 'Water Brush Capacity', value: 1.4, min: 0.1, max: 2.5, step: 0.05 },
     waterCapacityPigment: { label: 'Pigment Brush Water Cap', value: 0.8, min: 0.1, max: 2, step: 0.05 },
@@ -81,6 +126,21 @@ export default function Home() {
   const flow = brushControls.flow as number
   const { evap, absorb, edge, backrunStrength } = dryingControls as { evap: number; absorb: number; edge: number; backrunStrength: number }
   const { grav, visc, cfl, maxSubsteps } = dynamicsControls as { grav: number; visc: number; cfl: number; maxSubsteps: number }
+  const {
+    injection: binderInjection,
+    diffusion: binderDiffusion,
+    decay: binderDecay,
+    elasticity: binderElasticity,
+    viscosity: binderViscosity,
+    buoyancy: binderBuoyancy,
+  } = binderControls as {
+    injection: number
+    diffusion: number
+    decay: number
+    elasticity: number
+    viscosity: number
+    buoyancy: number
+  }
   const { stateAbsorption, granulation } = featureControls as { stateAbsorption: boolean; granulation: boolean }
   const { waterCapacityWater, waterCapacityPigment, pigmentCapacity, waterConsumption, pigmentConsumption, stampSpacing } = reservoirControls as {
     waterCapacityWater: number;
@@ -111,6 +171,14 @@ export default function Home() {
     granulation,
     cfl,
     maxSubsteps,
+    binder: {
+      injection: binderInjection,
+      diffusion: binderDiffusion,
+      decay: binderDecay,
+      elasticity: binderElasticity,
+      viscosity: binderViscosity,
+      buoyancy: binderBuoyancy,
+    },
     reservoir: {
       waterCapacityWater,
       waterCapacityPigment,
@@ -130,6 +198,12 @@ export default function Home() {
     granulation,
     cfl,
     maxSubsteps,
+    binderInjection,
+    binderDiffusion,
+    binderDecay,
+    binderElasticity,
+    binderViscosity,
+    binderBuoyancy,
     waterCapacityWater,
     waterCapacityPigment,
     pigmentCapacity,

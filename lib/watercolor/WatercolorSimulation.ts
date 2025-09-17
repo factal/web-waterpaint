@@ -11,6 +11,15 @@ export interface BrushSettings {
   color: [number, number, number]
 }
 
+export interface BinderParams {
+  injection: number
+  diffusion: number
+  decay: number
+  elasticity: number
+  viscosity: number
+  buoyancy: number
+}
+
 export interface SimulationParams {
   grav: number
   visc: number
@@ -22,6 +31,7 @@ export interface SimulationParams {
   backrunStrength: number
   cfl: number
   maxSubsteps: number
+  binder: BinderParams
   reservoir: {
     waterCapacityWater: number
     waterCapacityPigment: number
@@ -112,6 +122,19 @@ void main() {
 }
 `
 
+const SPLAT_BINDER_FRAGMENT = `
+${SPLAT_COMMON}
+uniform float uToolType;
+uniform float uBinderStrength;
+void main() {
+  vec4 src = texture(uSource, vUv);
+  float fall = splatFalloff(vUv, uRadius);
+  float mask = step(0.5, uToolType);
+  float add = uBinderStrength * uFlow * fall * mask;
+  fragColor = vec4(src.r + add, 0.0, 0.0, 1.0);
+}
+`
+
 const ADVECT_VELOCITY_FRAGMENT = `
 precision highp float;
 in vec2 vUv;
@@ -144,12 +167,16 @@ in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uHeight;
 uniform sampler2D uVelocity;
+uniform sampler2D uBinder;
 uniform float uDt;
+uniform float uBinderBuoyancy;
 void main() {
   vec2 vel = texture(uVelocity, vUv).xy;
   vec2 back = vUv - uDt * vel;
   vec4 sample_color = texture(uHeight, back);
-  fragColor = vec4(sample_color.r, 0.0, 0.0, 1.0);
+  float binder = texture(uBinder, vUv).r;
+  float newH = max(sample_color.r + uBinderBuoyancy * binder * uDt, 0.0);
+  fragColor = vec4(newH, 0.0, 0.0, 1.0);
 }
 `
 
@@ -165,6 +192,67 @@ void main() {
   vec2 back = vUv - uDt * vel;
   vec4 sample_color = texture(uPigment, back);
   fragColor = vec4(max(sample_color.rgb, vec3(0.0)), sample_color.a);
+}
+`
+
+const ADVECT_BINDER_FRAGMENT = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uBinder;
+uniform sampler2D uVelocity;
+uniform vec2 uTexel;
+uniform float uDt;
+uniform float uDiffusion;
+uniform float uDecay;
+
+float sampleBinder(vec2 coord) {
+  return texture(uBinder, coord).r;
+}
+
+void main() {
+  vec2 vel = texture(uVelocity, vUv).xy;
+  vec2 back = vUv - uDt * vel;
+  float binder = texture(uBinder, back).r;
+  float left = sampleBinder(vUv - vec2(uTexel.x, 0.0));
+  float right = sampleBinder(vUv + vec2(uTexel.x, 0.0));
+  float bottom = sampleBinder(vUv - vec2(0.0, uTexel.y));
+  float top = sampleBinder(vUv + vec2(0.0, uTexel.y));
+  float lap = left + right + top + bottom - 4.0 * binder;
+  binder += uDiffusion * lap * uDt;
+  binder = max(binder - uDecay * uDt, 0.0);
+  fragColor = vec4(binder, 0.0, 0.0, 1.0);
+}
+`
+
+const BINDER_FORCE_FRAGMENT = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uVelocity;
+uniform sampler2D uBinder;
+uniform vec2 uTexel;
+uniform float uDt;
+uniform float uElasticity;
+uniform float uViscosity;
+
+vec2 binderGradient(vec2 uv) {
+  float left = texture(uBinder, uv - vec2(uTexel.x, 0.0)).r;
+  float right = texture(uBinder, uv + vec2(uTexel.x, 0.0)).r;
+  float bottom = texture(uBinder, uv - vec2(0.0, uTexel.y)).r;
+  float top = texture(uBinder, uv + vec2(0.0, uTexel.y)).r;
+  return vec2(right - left, top - bottom) * 0.5;
+}
+
+void main() {
+  vec2 vel = texture(uVelocity, vUv).xy;
+  float binder = texture(uBinder, vUv).r;
+  vec2 grad = binderGradient(vUv);
+  vec2 springForce = -uElasticity * grad;
+  vel += springForce * uDt;
+  float damping = clamp(uViscosity * binder * uDt, 0.0, 0.95);
+  vel *= (1.0 - damping);
+  fragColor = vec4(vel, 0.0, 1.0);
 }
 `
 
@@ -469,15 +557,27 @@ const PIGMENT_S = [
   new THREE.Vector3(0.6, 0.55, 0.35),
 ] as const
 
+export const DEFAULT_BINDER_PARAMS: BinderParams = {
+  injection: 0.65,
+  diffusion: 0.12,
+  decay: 0.08,
+  elasticity: 1.25,
+  viscosity: 0.65,
+  buoyancy: 0.12,
+}
+
 // Cache RawShaderMaterials reused across simulation passes.
 type MaterialMap = {
   zero: THREE.RawShaderMaterial
   splatHeight: THREE.RawShaderMaterial
   splatVelocity: THREE.RawShaderMaterial
   splatPigment: THREE.RawShaderMaterial
+  splatBinder: THREE.RawShaderMaterial
   advectVelocity: THREE.RawShaderMaterial
   advectHeight: THREE.RawShaderMaterial
   advectPigment: THREE.RawShaderMaterial
+  advectBinder: THREE.RawShaderMaterial
+  binderForces: THREE.RawShaderMaterial
   absorbDeposit: THREE.RawShaderMaterial
   absorbHeight: THREE.RawShaderMaterial
   absorbPigment: THREE.RawShaderMaterial
@@ -578,6 +678,7 @@ export default class WatercolorSimulation {
     H: PingPongTarget
     UV: PingPongTarget
     C: PingPongTarget
+    B: PingPongTarget
     DEP: PingPongTarget
     W: PingPongTarget
     S: PingPongTarget
@@ -594,6 +695,7 @@ export default class WatercolorSimulation {
   private readonly velocityReductionTargets: THREE.WebGLRenderTarget[]
   private readonly velocityMaxMaterial: THREE.RawShaderMaterial
   private readonly velocityReadBuffer = new Float32Array(4)
+  private binderSettings: BinderParams
 
   // Set up render targets, materials, and state needed for the solver.
   constructor(renderer: THREE.WebGLRenderer, size = 512) {
@@ -611,6 +713,7 @@ export default class WatercolorSimulation {
       H: createPingPong(size, textureType),
       UV: createPingPong(size, textureType),
       C: createPingPong(size, textureType),
+      B: createPingPong(size, textureType),
       DEP: createPingPong(size, textureType),
       W: createPingPong(size, textureType),
       S: createPingPong(size, textureType),
@@ -630,6 +733,7 @@ export default class WatercolorSimulation {
 
     this.velocityMaxMaterial = this.createVelocityMaxMaterial()
     this.velocityReductionTargets = this.createVelocityReductionTargets(size)
+    this.binderSettings = { ...DEFAULT_BINDER_PARAMS }
 
     this.reset()
   }
@@ -670,16 +774,58 @@ export default class WatercolorSimulation {
     splatPigment.uniforms.uPigment.value.set(color[0], color[1], color[2])
     this.renderToTarget(splatPigment, this.targets.C.write)
     this.targets.C.swap()
+
+    const splatBinder = this.materials.splatBinder
+    splatBinder.uniforms.uSource.value = this.targets.B.read.texture
+    splatBinder.uniforms.uCenter.value.set(center[0], center[1])
+    splatBinder.uniforms.uRadius.value = radius
+    splatBinder.uniforms.uFlow.value = flow
+    splatBinder.uniforms.uToolType.value = toolType
+    splatBinder.uniforms.uBinderStrength.value = this.binderSettings.injection
+    this.renderToTarget(splatBinder, this.targets.B.write)
+    this.targets.B.swap()
   }
 
   // Run one simulation step using semi-Lagrangian advection and absorption.
   step(params: SimulationParams, dt = DEFAULT_DT) {
-    const { grav, visc, absorb, evap, edge, stateAbsorption, granulation, backrunStrength, cfl, maxSubsteps } = params
+    const {
+      grav,
+      visc,
+      absorb,
+      evap,
+      edge,
+      stateAbsorption,
+      granulation,
+      backrunStrength,
+      cfl,
+      maxSubsteps,
+      binder,
+    } = params
+
+    this.binderSettings = { ...binder }
 
     const substeps = this.determineSubsteps(cfl, maxSubsteps, dt)
     const substepDt = dt / substeps
 
     for (let i = 0; i < substeps; i += 1) {
+      const advectBinder = this.materials.advectBinder
+      advectBinder.uniforms.uBinder.value = this.targets.B.read.texture
+      advectBinder.uniforms.uVelocity.value = this.targets.UV.read.texture
+      advectBinder.uniforms.uDt.value = substepDt
+      advectBinder.uniforms.uDiffusion.value = binder.diffusion
+      advectBinder.uniforms.uDecay.value = binder.decay
+      this.renderToTarget(advectBinder, this.targets.B.write)
+      this.targets.B.swap()
+
+      const binderForces = this.materials.binderForces
+      binderForces.uniforms.uVelocity.value = this.targets.UV.read.texture
+      binderForces.uniforms.uBinder.value = this.targets.B.read.texture
+      binderForces.uniforms.uDt.value = substepDt
+      binderForces.uniforms.uElasticity.value = binder.elasticity
+      binderForces.uniforms.uViscosity.value = binder.viscosity
+      this.renderToTarget(binderForces, this.targets.UV.write)
+      this.targets.UV.swap()
+
       const advectVel = this.materials.advectVelocity
       advectVel.uniforms.uHeight.value = this.targets.H.read.texture
       advectVel.uniforms.uVelocity.value = this.targets.UV.read.texture
@@ -693,6 +839,8 @@ export default class WatercolorSimulation {
       const advectHeight = this.materials.advectHeight
       advectHeight.uniforms.uHeight.value = this.targets.H.read.texture
       advectHeight.uniforms.uVelocity.value = this.targets.UV.read.texture
+      advectHeight.uniforms.uBinder.value = this.targets.B.read.texture
+      advectHeight.uniforms.uBinderBuoyancy.value = binder.buoyancy
       advectHeight.uniforms.uDt.value = substepDt
       this.renderToTarget(advectHeight, this.targets.H.write)
       this.targets.H.swap()
@@ -788,6 +936,7 @@ export default class WatercolorSimulation {
     this.clearPingPong(this.targets.H)
     this.clearPingPong(this.targets.UV)
     this.clearPingPong(this.targets.C)
+    this.clearPingPong(this.targets.B)
     this.clearPingPong(this.targets.DEP)
     this.clearPingPong(this.targets.W)
     this.clearPingPong(this.targets.S)
@@ -814,6 +963,8 @@ export default class WatercolorSimulation {
     this.targets.UV.write.dispose()
     this.targets.C.read.dispose()
     this.targets.C.write.dispose()
+    this.targets.B.read.dispose()
+    this.targets.B.write.dispose()
     this.targets.DEP.read.dispose()
     this.targets.DEP.write.dispose()
     this.targets.W.read.dispose()
@@ -876,6 +1027,15 @@ export default class WatercolorSimulation {
       uPigment: pigmentUniform(),
     })
 
+    const splatBinder = createMaterial(SPLAT_BINDER_FRAGMENT, {
+      uSource: { value: null },
+      uCenter: centerUniform(),
+      uRadius: { value: 0 },
+      uFlow: { value: 0 },
+      uToolType: { value: 0 },
+      uBinderStrength: { value: DEFAULT_BINDER_PARAMS.injection },
+    })
+
     const advectVelocity = createMaterial(ADVECT_VELOCITY_FRAGMENT, {
       uHeight: { value: null },
       uVelocity: { value: null },
@@ -888,13 +1048,33 @@ export default class WatercolorSimulation {
     const advectHeight = createMaterial(ADVECT_HEIGHT_FRAGMENT, {
       uHeight: { value: null },
       uVelocity: { value: null },
+      uBinder: { value: null },
       uDt: { value: DEFAULT_DT },
+      uBinderBuoyancy: { value: DEFAULT_BINDER_PARAMS.buoyancy },
     })
 
     const advectPigment = createMaterial(ADVECT_PIGMENT_FRAGMENT, {
       uPigment: { value: null },
       uVelocity: { value: null },
       uDt: { value: DEFAULT_DT },
+    })
+
+    const advectBinder = createMaterial(ADVECT_BINDER_FRAGMENT, {
+      uBinder: { value: null },
+      uVelocity: { value: null },
+      uTexel: { value: this.texelSize },
+      uDt: { value: DEFAULT_DT },
+      uDiffusion: { value: DEFAULT_BINDER_PARAMS.diffusion },
+      uDecay: { value: DEFAULT_BINDER_PARAMS.decay },
+    })
+
+    const binderForces = createMaterial(BINDER_FORCE_FRAGMENT, {
+      uVelocity: { value: null },
+      uBinder: { value: null },
+      uTexel: { value: this.texelSize },
+      uDt: { value: DEFAULT_DT },
+      uElasticity: { value: DEFAULT_BINDER_PARAMS.elasticity },
+      uViscosity: { value: DEFAULT_BINDER_PARAMS.viscosity },
     })
 
     const absorbUniforms = () => ({
@@ -960,9 +1140,12 @@ export default class WatercolorSimulation {
       splatHeight,
       splatVelocity,
       splatPigment,
+      splatBinder,
       advectVelocity,
       advectHeight,
       advectPigment,
+      advectBinder,
+      binderForces,
       absorbDeposit,
       absorbHeight,
       absorbPigment,

@@ -195,6 +195,33 @@ void main() {
 }
 `
 
+const PIGMENT_DIFFUSION_FRAGMENT = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uPigment;
+uniform vec2 uTexel;
+uniform float uDiffusion;
+uniform float uDt;
+
+vec3 sampleRGB(vec2 uv) {
+  return texture(uPigment, uv).rgb;
+}
+
+void main() {
+  vec4 center = texture(uPigment, vUv);
+  vec2 du = vec2(uTexel.x, 0.0);
+  vec2 dv = vec2(0.0, uTexel.y);
+  vec3 left = sampleRGB(vUv - du);
+  vec3 right = sampleRGB(vUv + du);
+  vec3 bottom = sampleRGB(vUv - dv);
+  vec3 top = sampleRGB(vUv + dv);
+  vec3 laplacian = left + right + top + bottom - 4.0 * center.rgb;
+  vec3 diffused = center.rgb + uDiffusion * laplacian * uDt;
+  fragColor = vec4(max(diffused, vec3(0.0)), center.a);
+}
+`
+
 const ADVECT_BINDER_FRAGMENT = `
 precision highp float;
 in vec2 vUv;
@@ -541,6 +568,7 @@ const DEFAULT_DT = 1 / 90
 const DEPOSITION_BASE = 0.02
 const PAPER_COLOR = new THREE.Vector3(0.92, 0.91, 0.88)
 const PAPER_DIFFUSION_STRENGTH = 6.0
+const PIGMENT_DIFFUSION_COEFF = 0.08
 const KM_LAYER_SCALE = 1.4
 const ABSORB_EXPONENT = 1.4
 const HUMIDITY_INFLUENCE = 0.6
@@ -576,6 +604,7 @@ type MaterialMap = {
   advectVelocity: THREE.RawShaderMaterial
   advectHeight: THREE.RawShaderMaterial
   advectPigment: THREE.RawShaderMaterial
+  diffusePigment: THREE.RawShaderMaterial
   advectBinder: THREE.RawShaderMaterial
   binderForces: THREE.RawShaderMaterial
   absorbDeposit: THREE.RawShaderMaterial
@@ -852,6 +881,13 @@ export default class WatercolorSimulation {
       this.renderToTarget(advectPigment, this.targets.C.write)
       this.targets.C.swap()
 
+      const diffusePigment = this.materials.diffusePigment
+      diffusePigment.uniforms.uPigment.value = this.targets.C.read.texture
+      diffusePigment.uniforms.uDiffusion.value = PIGMENT_DIFFUSION_COEFF
+      diffusePigment.uniforms.uDt.value = substepDt
+      this.renderToTarget(diffusePigment, this.targets.C.write)
+      this.targets.C.swap()
+
       const absorbFactor = absorb * substepDt
       const evapFactor = evap * substepDt
       const edgeFactor = edge * substepDt
@@ -1059,6 +1095,13 @@ export default class WatercolorSimulation {
       uDt: { value: DEFAULT_DT },
     })
 
+    const diffusePigment = createMaterial(PIGMENT_DIFFUSION_FRAGMENT, {
+      uPigment: { value: null },
+      uTexel: { value: this.texelSize },
+      uDiffusion: { value: PIGMENT_DIFFUSION_COEFF },
+      uDt: { value: DEFAULT_DT },
+    })
+
     const advectBinder = createMaterial(ADVECT_BINDER_FRAGMENT, {
       uBinder: { value: null },
       uVelocity: { value: null },
@@ -1144,6 +1187,7 @@ export default class WatercolorSimulation {
       advectVelocity,
       advectHeight,
       advectPigment,
+      diffusePigment,
       advectBinder,
       binderForces,
       absorbDeposit,

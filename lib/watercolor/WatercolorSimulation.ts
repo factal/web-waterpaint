@@ -29,6 +29,9 @@ export interface SimulationParams {
   stateAbsorption: boolean
   granulation: boolean
   backrunStrength: number
+  absorbExponent: number
+  absorbTimeOffset: number
+  absorbMinFlux: number
   cfl: number
   maxSubsteps: number
   binder: BinderParams
@@ -297,6 +300,9 @@ uniform float uEvap;
 uniform float uEdge;
 uniform float uDepBase;
 uniform float uBeta;
+uniform float uAbsorbTime;
+uniform float uAbsorbTimeOffset;
+uniform float uAbsorbFloor;
 uniform float uHumidity;
 uniform float uSettle;
 uniform float uGranStrength;
@@ -334,10 +340,14 @@ AbsorbResult computeAbsorb(vec2 uv) {
   float bloomFactor = clamp(uBackrunStrength * edgeAdvance, 0.0, 1.0) * step(1e-5, h);
 
   float humidity = clamp(1.0 - wet, 0.0, 1.0);
-  float absorbRate = uAbsorb * pow(humidity, uBeta);
+  float humidityFactor = pow(humidity, uBeta);
+  float timeTerm = max(uAbsorbTime + uAbsorbTimeOffset, 1e-4);
+  float decay = inversesqrt(timeTerm);
+  float baseAbsorb = max(uAbsorb * decay, uAbsorbFloor);
+  float absorbAmount = baseAbsorb * humidityFactor;
   float evapBase = uEvap * sqrt(max(h, 0.0));
   float evapRate = evapBase * mix(1.0, humidity, uHumidity);
-  float totalOut = absorbRate + evapRate;
+  float totalOut = absorbAmount + evapRate;
 
   float newH = max(h - totalOut, 0.0);
   float remRaw = totalOut / max(h, 1e-6);
@@ -369,7 +379,7 @@ AbsorbResult computeAbsorb(vec2 uv) {
   settledNew = max(settledNew - fromSettled, vec3(0.0));
   dep += granDep;
 
-  float newWet = clamp(wet + absorbRate, 0.0, 1.0);
+  float newWet = clamp(wet + absorbAmount, 0.0, 1.0);
 
   res.newH = newH;
   res.newWet = newWet;
@@ -570,7 +580,9 @@ const PAPER_COLOR = new THREE.Vector3(0.92, 0.91, 0.88)
 const PAPER_DIFFUSION_STRENGTH = 6.0
 const PIGMENT_DIFFUSION_COEFF = 0.08
 const KM_LAYER_SCALE = 1.4
-const ABSORB_EXPONENT = 1.4
+export const DEFAULT_ABSORB_EXPONENT = 0.5
+export const DEFAULT_ABSORB_TIME_OFFSET = 0.15
+export const DEFAULT_ABSORB_MIN_FLUX = 0.02
 const HUMIDITY_INFLUENCE = 0.6
 const GRANULATION_SETTLE_RATE = 0.28
 const GRANULATION_STRENGTH = 0.45
@@ -725,6 +737,7 @@ export default class WatercolorSimulation {
   private readonly velocityMaxMaterial: THREE.RawShaderMaterial
   private readonly velocityReadBuffer = new Float32Array(4)
   private binderSettings: BinderParams
+  private absorbElapsed = 0
 
   // Set up render targets, materials, and state needed for the solver.
   constructor(renderer: THREE.WebGLRenderer, size = 512) {
@@ -813,6 +826,9 @@ export default class WatercolorSimulation {
     splatBinder.uniforms.uBinderStrength.value = this.binderSettings.injection
     this.renderToTarget(splatBinder, this.targets.B.write)
     this.targets.B.swap()
+
+    const absorbReset = toolType === 0 ? 0.3 : 0.15
+    this.absorbElapsed = Math.max(0, this.absorbElapsed - absorbReset * flow)
   }
 
   // Run one simulation step using semi-Lagrangian advection and absorption.
@@ -826,6 +842,9 @@ export default class WatercolorSimulation {
       stateAbsorption,
       granulation,
       backrunStrength,
+      absorbExponent,
+      absorbTimeOffset,
+      absorbMinFlux,
       cfl,
       maxSubsteps,
       binder,
@@ -888,33 +907,103 @@ export default class WatercolorSimulation {
       this.renderToTarget(diffusePigment, this.targets.C.write)
       this.targets.C.swap()
 
-      const absorbFactor = absorb * substepDt
+      const absorbBase = absorb * substepDt
       const evapFactor = evap * substepDt
       const edgeFactor = edge * substepDt
-      const beta = stateAbsorption ? ABSORB_EXPONENT : 1.0
+      const beta = stateAbsorption ? absorbExponent : 1.0
       const humidityInfluence = stateAbsorption ? HUMIDITY_INFLUENCE : 0.0
       const settleBase = granulation ? GRANULATION_SETTLE_RATE : 0.0
       const granStrength = granulation ? GRANULATION_STRENGTH : 0.0
       const settleFactor = settleBase * substepDt
+      const timeOffset = stateAbsorption ? Math.max(absorbTimeOffset, 1e-4) : 1.0
+      const absorbTime = stateAbsorption ? this.absorbElapsed + 0.5 * substepDt : 0
+      const absorbFloor = stateAbsorption ? Math.max(absorbMinFlux, 0) * substepDt : 0
+      const decay = stateAbsorption ? 1 / Math.sqrt(absorbTime + timeOffset) : 1
+      const paperReplenish = absorbBase * decay
 
       const absorbDeposit = this.materials.absorbDeposit
-      this.assignAbsorbUniforms(absorbDeposit, absorbFactor, evapFactor, edgeFactor, settleFactor, beta, humidityInfluence, granStrength, backrunStrength)
+      this.assignAbsorbUniforms(
+        absorbDeposit,
+        absorbBase,
+        evapFactor,
+        edgeFactor,
+        settleFactor,
+        beta,
+        humidityInfluence,
+        granStrength,
+        backrunStrength,
+        absorbTime,
+        timeOffset,
+        absorbFloor,
+      )
       this.renderToTarget(absorbDeposit, this.targets.DEP.write)
 
       const absorbHeight = this.materials.absorbHeight
-      this.assignAbsorbUniforms(absorbHeight, absorbFactor, evapFactor, edgeFactor, settleFactor, beta, humidityInfluence, granStrength, backrunStrength)
+      this.assignAbsorbUniforms(
+        absorbHeight,
+        absorbBase,
+        evapFactor,
+        edgeFactor,
+        settleFactor,
+        beta,
+        humidityInfluence,
+        granStrength,
+        backrunStrength,
+        absorbTime,
+        timeOffset,
+        absorbFloor,
+      )
       this.renderToTarget(absorbHeight, this.targets.H.write)
 
       const absorbPigment = this.materials.absorbPigment
-      this.assignAbsorbUniforms(absorbPigment, absorbFactor, evapFactor, edgeFactor, settleFactor, beta, humidityInfluence, granStrength, backrunStrength)
+      this.assignAbsorbUniforms(
+        absorbPigment,
+        absorbBase,
+        evapFactor,
+        edgeFactor,
+        settleFactor,
+        beta,
+        humidityInfluence,
+        granStrength,
+        backrunStrength,
+        absorbTime,
+        timeOffset,
+        absorbFloor,
+      )
       this.renderToTarget(absorbPigment, this.targets.C.write)
 
       const absorbWet = this.materials.absorbWet
-      this.assignAbsorbUniforms(absorbWet, absorbFactor, evapFactor, edgeFactor, settleFactor, beta, humidityInfluence, granStrength, backrunStrength)
+      this.assignAbsorbUniforms(
+        absorbWet,
+        absorbBase,
+        evapFactor,
+        edgeFactor,
+        settleFactor,
+        beta,
+        humidityInfluence,
+        granStrength,
+        backrunStrength,
+        absorbTime,
+        timeOffset,
+        absorbFloor,
+      )
       this.renderToTarget(absorbWet, this.targets.W.write)
 
       const absorbSettled = this.materials.absorbSettled
-      this.assignAbsorbUniforms(absorbSettled, absorbFactor, evapFactor, edgeFactor, settleFactor, beta, humidityInfluence, granStrength, backrunStrength)
+      this.assignAbsorbUniforms(
+        absorbSettled,
+        absorbBase,
+        evapFactor,
+        edgeFactor,
+        settleFactor,
+        beta,
+        humidityInfluence,
+        granStrength,
+        backrunStrength,
+        absorbTime,
+        timeOffset,
+        absorbFloor,
+      )
       this.renderToTarget(absorbSettled, this.targets.S.write)
 
       this.targets.DEP.swap()
@@ -923,7 +1012,12 @@ export default class WatercolorSimulation {
       this.targets.W.swap()
       this.targets.S.swap()
 
-      this.applyPaperDiffusion(substepDt, absorbFactor)
+      this.applyPaperDiffusion(substepDt, paperReplenish)
+      if (stateAbsorption) {
+        this.absorbElapsed += substepDt
+      } else {
+        this.absorbElapsed = 0
+      }
     }
 
     const composite = this.materials.composite
@@ -979,6 +1073,7 @@ export default class WatercolorSimulation {
     this.clearPingPong(this.pressure)
     this.renderToTarget(this.materials.zero, this.divergence)
     this.renderToTarget(this.materials.zero, this.compositeTarget)
+    this.absorbElapsed = 0
   }
 
   // Release GPU allocations when the simulation is no longer needed.
@@ -1130,7 +1225,10 @@ export default class WatercolorSimulation {
       uEvap: { value: 0 },
       uEdge: { value: 0 },
       uDepBase: { value: DEPOSITION_BASE },
-      uBeta: { value: ABSORB_EXPONENT },
+      uBeta: { value: DEFAULT_ABSORB_EXPONENT },
+      uAbsorbTime: { value: 0 },
+      uAbsorbTimeOffset: { value: DEFAULT_ABSORB_TIME_OFFSET },
+      uAbsorbFloor: { value: 0 },
       uHumidity: { value: HUMIDITY_INFLUENCE },
       uSettle: { value: 0 },
       uGranStrength: { value: GRANULATION_STRENGTH },
@@ -1204,7 +1302,20 @@ export default class WatercolorSimulation {
   }
 
   // Share the same uniform assignments across the different absorb passes.
-  private assignAbsorbUniforms(material: THREE.RawShaderMaterial, absorb: number, evap: number, edge: number, settle: number, beta: number, humidity: number, granStrength: number, backrunStrength: number) {
+  private assignAbsorbUniforms(
+    material: THREE.RawShaderMaterial,
+    absorb: number,
+    evap: number,
+    edge: number,
+    settle: number,
+    beta: number,
+    humidity: number,
+    granStrength: number,
+    backrunStrength: number,
+    absorbTime: number,
+    timeOffset: number,
+    absorbFloor: number,
+  ) {
     const uniforms = material.uniforms as Record<string, THREE.IUniform>
     uniforms.uHeight.value = this.targets.H.read.texture
     uniforms.uPigment.value = this.targets.C.read.texture
@@ -1220,6 +1331,9 @@ export default class WatercolorSimulation {
     if (uniforms.uSettle) uniforms.uSettle.value = settle
     if (uniforms.uGranStrength) uniforms.uGranStrength.value = granStrength
     if (uniforms.uBackrunStrength) uniforms.uBackrunStrength.value = backrunStrength
+    if (uniforms.uAbsorbTime) uniforms.uAbsorbTime.value = absorbTime
+    if (uniforms.uAbsorbTimeOffset) uniforms.uAbsorbTimeOffset.value = timeOffset
+    if (uniforms.uAbsorbFloor) uniforms.uAbsorbFloor.value = absorbFloor
   }
 
   private createVelocityMaxMaterial(): THREE.RawShaderMaterial {

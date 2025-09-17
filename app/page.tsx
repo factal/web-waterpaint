@@ -3,7 +3,14 @@
 import { useMemo, useState } from 'react'
 import { Leva, button, useControls } from 'leva'
 import WatercolorViewport from '@/components/watercolor/WatercolorViewport'
-import { DEFAULT_BINDER_PARAMS, type BrushType, type SimulationParams } from '@/lib/watercolor/WatercolorSimulation'
+import {
+  DEFAULT_ABSORB_EXPONENT,
+  DEFAULT_ABSORB_MIN_FLUX,
+  DEFAULT_ABSORB_TIME_OFFSET,
+  DEFAULT_BINDER_PARAMS,
+  type BrushType,
+  type SimulationParams,
+} from '@/lib/watercolor/WatercolorSimulation'
 
 type Tool = 'water' | 'pigment0' | 'pigment1' | 'pigment2'
 
@@ -169,6 +176,9 @@ export default function Home() {
     backrunStrength,
     stateAbsorption,
     granulation,
+    absorbExponent: DEFAULT_ABSORB_EXPONENT,
+    absorbTimeOffset: DEFAULT_ABSORB_TIME_OFFSET,
+    absorbMinFlux: DEFAULT_ABSORB_MIN_FLUX,
     cfl,
     maxSubsteps,
     binder: {

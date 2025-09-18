@@ -7,21 +7,20 @@ import {
   ABSORB_SETTLED_FRAGMENT,
   ABSORB_WET_FRAGMENT,
   ADVECT_BINDER_FRAGMENT,
-  ADVECT_HEIGHT_FRAGMENT,
   ADVECT_PIGMENT_FRAGMENT,
-  ADVECT_VELOCITY_FRAGMENT,
-  BINDER_FORCE_FRAGMENT,
   COMPOSITE_FRAGMENT,
   FULLSCREEN_VERTEX,
+  LBM_COLLISION_FRAGMENTS,
+  LBM_DENSITY_FRAGMENT,
+  LBM_FORCE_FRAGMENT,
+  LBM_MACROSCOPIC_FRAGMENT,
+  LBM_MATCH_FRAGMENTS,
+  LBM_SPLAT_FRAGMENTS,
+  LBM_STREAMING_FRAGMENTS,
   PAPER_DIFFUSION_FRAGMENT,
   PIGMENT_DIFFUSION_FRAGMENT,
-  PRESSURE_DIVERGENCE_FRAGMENT,
-  PRESSURE_JACOBI_FRAGMENT,
-  PRESSURE_PROJECT_FRAGMENT,
   SPLAT_BINDER_FRAGMENT,
-  SPLAT_HEIGHT_FRAGMENT,
   SPLAT_PIGMENT_FRAGMENT,
-  SPLAT_VELOCITY_FRAGMENT,
   ZERO_FRAGMENT,
   VELOCITY_MAX_FRAGMENT,
 } from './shaders'
@@ -41,7 +40,7 @@ import {
   PIGMENT_K,
   PIGMENT_S,
 } from './constants'
-import { type MaterialMap } from './types'
+import { type MaterialMap, type MaterialTriplet } from './types'
 
 const sanitizeShader = (code: string) => code.trimStart()
 
@@ -57,26 +56,18 @@ function createMaterial(fragmentShader: string, uniforms: Record<string, THREE.I
   })
 }
 
+function createTriplet(
+  fragments: readonly string[],
+  uniforms: () => Record<string, THREE.IUniform>,
+): MaterialTriplet {
+  return fragments.map((fragment) => createMaterial(fragment, uniforms())) as MaterialTriplet
+}
+
 export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.DataTexture): MaterialMap {
   const centerUniform = () => ({ value: new THREE.Vector2(0, 0) })
   const pigmentUniform = () => ({ value: new THREE.Vector3(0, 0, 0) })
 
   const zero = createMaterial(ZERO_FRAGMENT, {})
-
-  const splatHeight = createMaterial(SPLAT_HEIGHT_FRAGMENT, {
-    uSource: { value: null },
-    uCenter: centerUniform(),
-    uRadius: { value: 0 },
-    uFlow: { value: 0 },
-    uToolType: { value: 0 },
-  })
-
-  const splatVelocity = createMaterial(SPLAT_VELOCITY_FRAGMENT, {
-    uSource: { value: null },
-    uCenter: centerUniform(),
-    uRadius: { value: 0 },
-    uFlow: { value: 0 },
-  })
 
   const splatPigment = createMaterial(SPLAT_PIGMENT_FRAGMENT, {
     uSource: { value: null },
@@ -94,23 +85,6 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uBinderStrength: { value: DEFAULT_BINDER_PARAMS.injection },
-  })
-
-  const advectVelocity = createMaterial(ADVECT_VELOCITY_FRAGMENT, {
-    uHeight: { value: null },
-    uVelocity: { value: null },
-    uDt: { value: DEFAULT_DT },
-    uGrav: { value: 0.9 },
-    uVisc: { value: 0.02 },
-    uTexel: { value: texelSize.clone() },
-  })
-
-  const advectHeight = createMaterial(ADVECT_HEIGHT_FRAGMENT, {
-    uHeight: { value: null },
-    uVelocity: { value: null },
-    uBinder: { value: null },
-    uDt: { value: DEFAULT_DT },
-    uBinderBuoyancy: { value: DEFAULT_BINDER_PARAMS.buoyancy },
   })
 
   const advectPigment = createMaterial(ADVECT_PIGMENT_FRAGMENT, {
@@ -133,15 +107,6 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uDt: { value: DEFAULT_DT },
     uDiffusion: { value: DEFAULT_BINDER_PARAMS.diffusion },
     uDecay: { value: DEFAULT_BINDER_PARAMS.decay },
-  })
-
-  const binderForces = createMaterial(BINDER_FORCE_FRAGMENT, {
-    uVelocity: { value: null },
-    uBinder: { value: null },
-    uTexel: { value: texelSize.clone() },
-    uDt: { value: DEFAULT_DT },
-    uElasticity: { value: DEFAULT_BINDER_PARAMS.elasticity },
-    uViscosity: { value: DEFAULT_BINDER_PARAMS.viscosity },
   })
 
   const absorbUniforms = () => ({
@@ -180,21 +145,60 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uStrength: { value: PAPER_DIFFUSION_STRENGTH },
   })
 
-  const divergence = createMaterial(PRESSURE_DIVERGENCE_FRAGMENT, {
+  const lbmForce = createMaterial(LBM_FORCE_FRAGMENT, {
+    uHeight: { value: null },
+    uBinder: { value: null },
     uVelocity: { value: null },
     uTexel: { value: texelSize.clone() },
+    uGrav: { value: 0.9 },
+    uViscosity: { value: 0.02 },
+    uBinderElasticity: { value: DEFAULT_BINDER_PARAMS.elasticity },
+    uBinderViscosity: { value: DEFAULT_BINDER_PARAMS.viscosity },
+    uBinderBuoyancy: { value: DEFAULT_BINDER_PARAMS.buoyancy },
   })
 
-  const jacobi = createMaterial(PRESSURE_JACOBI_FRAGMENT, {
-    uPressure: { value: null },
-    uDivergence: { value: null },
+  const lbmSplat = createTriplet(LBM_SPLAT_FRAGMENTS, () => ({
+    uF0: { value: null },
+    uF1: { value: null },
+    uF2: { value: null },
+    uCenter: centerUniform(),
+    uRadius: { value: 0 },
+    uFlow: { value: 0 },
+    uToolType: { value: 0 },
     uTexel: { value: texelSize.clone() },
+  }))
+
+  const lbmCollision = createTriplet(LBM_COLLISION_FRAGMENTS, () => ({
+    uF0: { value: null },
+    uF1: { value: null },
+    uF2: { value: null },
+    uForce: { value: null },
+    uVisc: { value: 0.02 },
+    uDt: { value: DEFAULT_DT },
+  }))
+
+  const lbmStreaming = createTriplet(LBM_STREAMING_FRAGMENTS, () => ({
+    uF0: { value: null },
+    uF1: { value: null },
+    uF2: { value: null },
+  }))
+
+  const lbmMatch = createTriplet(LBM_MATCH_FRAGMENTS, () => ({
+    uF0: { value: null },
+    uF1: { value: null },
+    uF2: { value: null },
+    uState: { value: null },
+    uNewDensity: { value: null },
+  }))
+
+  const lbmMacroscopic = createMaterial(LBM_MACROSCOPIC_FRAGMENT, {
+    uF0: { value: null },
+    uF1: { value: null },
+    uF2: { value: null },
   })
 
-  const project = createMaterial(PRESSURE_PROJECT_FRAGMENT, {
-    uVelocity: { value: null },
-    uPressure: { value: null },
-    uTexel: { value: texelSize.clone() },
+  const lbmDensity = createMaterial(LBM_DENSITY_FRAGMENT, {
+    uState: { value: null },
   })
 
   const composite = createMaterial(COMPOSITE_FRAGMENT, {
@@ -207,16 +211,11 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
 
   return {
     zero,
-    splatHeight,
-    splatVelocity,
     splatPigment,
     splatBinder,
-    advectVelocity,
-    advectHeight,
     advectPigment,
     diffusePigment,
     advectBinder,
-    binderForces,
     absorbDeposit,
     absorbHeight,
     absorbPigment,
@@ -224,9 +223,13 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     absorbSettled,
     diffuseWet,
     composite,
-    divergence,
-    jacobi,
-    project,
+    lbmForce,
+    lbmSplat,
+    lbmCollision,
+    lbmStreaming,
+    lbmMatch,
+    lbmMacroscopic,
+    lbmDensity,
   }
 }
 

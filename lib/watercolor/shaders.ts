@@ -32,31 +32,6 @@ float splatFalloff(vec2 uv, float radius) {
 }
 `
 
-export const SPLAT_HEIGHT_FRAGMENT = `
-${SPLAT_COMMON}
-uniform float uToolType;
-void main() {
-  vec4 src = texture(uSource, vUv);
-  float fall = splatFalloff(vUv, uRadius);
-  float waterMul = mix(1.0, 0.7, step(0.5, uToolType));
-  src.r += waterMul * uFlow * fall;
-  fragColor = vec4(src.r, 0.0, 0.0, 1.0);
-}
-`
-
-export const SPLAT_VELOCITY_FRAGMENT = `
-${SPLAT_COMMON}
-void main() {
-  vec4 src = texture(uSource, vUv);
-  vec2 delta = vUv - uCenter;
-  float fall = splatFalloff(vUv, uRadius);
-  float len = length(delta);
-  vec2 dir = len > 1e-6 ? delta / len : vec2(0.0);
-  vec2 dv = dir * (0.7 * uFlow * fall);
-  fragColor = vec4(src.xy + dv, 0.0, 1.0);
-}
-`
-
 export const SPLAT_PIGMENT_FRAGMENT = `
 ${SPLAT_COMMON}
 uniform float uToolType;
@@ -83,48 +58,416 @@ void main() {
 }
 `
 
-export const ADVECT_VELOCITY_FRAGMENT = `
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uHeight;
-uniform sampler2D uVelocity;
-uniform float uDt;
-uniform float uGrav;
-uniform float uVisc;
-uniform vec2 uTexel;
-vec2 sampleGrad(vec2 uv) {
-  float hm = texture(uHeight, uv - vec2(uTexel.x, 0.0)).r;
-  float hp = texture(uHeight, uv + vec2(uTexel.x, 0.0)).r;
-  float hm2 = texture(uHeight, uv - vec2(0.0, uTexel.y)).r;
-  float hp2 = texture(uHeight, uv + vec2(0.0, uTexel.y)).r;
-  return vec2((hp - hm) * 0.5, (hp2 - hm2) * 0.5);
-}
-void main() {
-  vec2 vel = texture(uVelocity, vUv).xy;
-  vec2 grad = sampleGrad(vUv);
-  vel += -uDt * uGrav * grad;
-  vel *= (1.0 - uVisc * uDt);
-  fragColor = vec4(vel, 0.0, 1.0);
+const createLbmFragment = (body: string, group: number) => `#define LBM_GROUP ${group}\n${body}`
+
+const LBM_CONSTANTS = `
+const float W0 = 4.0 / 9.0;
+const float W_AXIS = 1.0 / 9.0;
+const float W_DIAG = 1.0 / 36.0;
+const vec2 C1 = vec2(1.0, 0.0);
+const vec2 C2 = vec2(0.0, 1.0);
+const vec2 C3 = vec2(-1.0, 0.0);
+const vec2 C4 = vec2(0.0, -1.0);
+const vec2 C5 = vec2(1.0, 1.0);
+const vec2 C6 = vec2(-1.0, 1.0);
+const vec2 C7 = vec2(-1.0, -1.0);
+const vec2 C8 = vec2(1.0, -1.0);
+const float MIN_RHO = 1e-6;
+const float DRY_THRESHOLD = 1e-3;
+
+float computeEq(float weight, float rho, float dotCU, float uSq) {
+  return weight * rho * (1.0 + 3.0 * dotCU + 4.5 * dotCU * dotCU - 1.5 * uSq);
 }
 `
 
-export const ADVECT_HEIGHT_FRAGMENT = `
+const LBM_SPLAT_BASE = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uF0;
+uniform sampler2D uF1;
+uniform sampler2D uF2;
+uniform vec2 uCenter;
+uniform float uRadius;
+uniform float uFlow;
+uniform float uToolType;
+uniform vec2 uTexel;
+${LBM_CONSTANTS}
+vec2 uvFromCoord(ivec2 coord, ivec2 size) {
+  return (vec2(coord) + vec2(0.5)) / vec2(size);
+}
+void main() {
+  ivec2 coord = ivec2(gl_FragCoord.xy);
+  vec4 data0 = texelFetch(uF0, coord, 0);
+  vec4 data1 = texelFetch(uF1, coord, 0);
+  vec4 data2 = texelFetch(uF2, coord, 0);
+  float f0 = data0.x;
+  float f1 = data0.y;
+  float f2 = data0.z;
+  float f3 = data0.w;
+  float f4 = data1.x;
+  float f5 = data1.y;
+  float f6 = data1.z;
+  float f7 = data1.w;
+  float f8 = data2.x;
+  float rho = max(f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8, MIN_RHO);
+  vec2 momentum = vec2(
+    f1 - f3 + f5 - f6 - f7 + f8,
+    f2 - f4 + f5 + f6 - f7 - f8
+  );
+  vec2 vel = momentum / rho;
+  ivec2 size = textureSize(uF0, 0);
+  vec2 uvCoord = uvFromCoord(coord, size);
+  vec2 delta = uvCoord - uCenter;
+  float r = max(uRadius, 1e-6);
+  float fall = exp(-9.0 * dot(delta, delta) / (r * r + 1e-6));
+  float waterMul = mix(1.0, 0.7, step(0.5, uToolType));
+  rho = max(rho + waterMul * uFlow * fall, MIN_RHO);
+  float dist = length(delta);
+  if (dist > 1e-6) {
+    vec2 dir = delta / dist;
+    vel += dir * (0.7 * uFlow * fall);
+  }
+  float uSq = dot(vel, vel);
+  float dot1 = dot(C1, vel);
+  float dot2 = dot(C2, vel);
+  float dot3 = dot(C3, vel);
+  float dot4 = dot(C4, vel);
+  float dot5 = dot(C5, vel);
+  float dot6 = dot(C6, vel);
+  float dot7 = dot(C7, vel);
+  float dot8 = dot(C8, vel);
+  float eq0 = computeEq(W0, rho, 0.0, uSq);
+  float eq1 = computeEq(W_AXIS, rho, dot1, uSq);
+  float eq2 = computeEq(W_AXIS, rho, dot2, uSq);
+  float eq3 = computeEq(W_AXIS, rho, dot3, uSq);
+  float eq4 = computeEq(W_AXIS, rho, dot4, uSq);
+  float eq5 = computeEq(W_DIAG, rho, dot5, uSq);
+  float eq6 = computeEq(W_DIAG, rho, dot6, uSq);
+  float eq7 = computeEq(W_DIAG, rho, dot7, uSq);
+  float eq8 = computeEq(W_DIAG, rho, dot8, uSq);
+#if LBM_GROUP == 0
+  fragColor = vec4(eq0, eq1, eq2, eq3);
+#elif LBM_GROUP == 1
+  fragColor = vec4(eq4, eq5, eq6, eq7);
+#else
+  fragColor = vec4(eq8, 0.0, 0.0, 1.0);
+#endif
+}
+`
+
+export const LBM_SPLAT_FRAGMENTS = [
+  createLbmFragment(LBM_SPLAT_BASE, 0),
+  createLbmFragment(LBM_SPLAT_BASE, 1),
+  createLbmFragment(LBM_SPLAT_BASE, 2),
+] as const
+
+export const LBM_FORCE_FRAGMENT = `
 precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uHeight;
-uniform sampler2D uVelocity;
 uniform sampler2D uBinder;
-uniform float uDt;
+uniform sampler2D uVelocity;
+uniform vec2 uTexel;
+uniform float uGrav;
+uniform float uViscosity;
+uniform float uBinderElasticity;
+uniform float uBinderViscosity;
 uniform float uBinderBuoyancy;
+const float DRY_THRESHOLD = 1e-3;
 void main() {
+  vec2 texel = uTexel;
+  float hL = texture(uHeight, vUv - vec2(texel.x, 0.0)).r;
+  float hR = texture(uHeight, vUv + vec2(texel.x, 0.0)).r;
+  float hB = texture(uHeight, vUv - vec2(0.0, texel.y)).r;
+  float hT = texture(uHeight, vUv + vec2(0.0, texel.y)).r;
+  float hC = texture(uHeight, vUv).r;
+  vec2 gradH = vec2(hR - hL, hT - hB) * 0.5;
+  float bL = texture(uBinder, vUv - vec2(texel.x, 0.0)).r;
+  float bR = texture(uBinder, vUv + vec2(texel.x, 0.0)).r;
+  float bB = texture(uBinder, vUv - vec2(0.0, texel.y)).r;
+  float bT = texture(uBinder, vUv + vec2(0.0, texel.y)).r;
+  float bC = texture(uBinder, vUv).r;
+  vec2 gradB = vec2(bR - bL, bT - bB) * 0.5;
   vec2 vel = texture(uVelocity, vUv).xy;
-  vec2 back = vUv - uDt * vel;
-  vec4 sample_color = texture(uHeight, back);
-  float binder = texture(uBinder, vUv).r;
-  float newH = max(sample_color.r + uBinderBuoyancy * binder * uDt, 0.0);
-  fragColor = vec4(newH, 0.0, 0.0, 1.0);
+  vec2 force = vec2(0.0);
+  force -= uGrav * gradH;
+  force += uBinderElasticity * gradB;
+  force -= clamp(uViscosity, 0.0, 4.0) * vel;
+  force -= uBinderViscosity * bC * vel;
+  force.y += uBinderBuoyancy * bC;
+  float thinFilm = clamp(hC, 0.0, 1.0);
+  float wetMask = step(DRY_THRESHOLD, hC);
+  force *= wetMask * mix(0.3, 1.0, thinFilm);
+  fragColor = vec4(force, 0.0, 1.0);
+}
+`
+
+const LBM_COLLISION_BASE = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uF0;
+uniform sampler2D uF1;
+uniform sampler2D uF2;
+uniform sampler2D uForce;
+uniform float uVisc;
+uniform float uDt;
+${LBM_CONSTANTS}
+void main() {
+  ivec2 coord = ivec2(gl_FragCoord.xy);
+  vec4 data0 = texelFetch(uF0, coord, 0);
+  vec4 data1 = texelFetch(uF1, coord, 0);
+  vec4 data2 = texelFetch(uF2, coord, 0);
+  float f0 = data0.x;
+  float f1 = data0.y;
+  float f2 = data0.z;
+  float f3 = data0.w;
+  float f4 = data1.x;
+  float f5 = data1.y;
+  float f6 = data1.z;
+  float f7 = data1.w;
+  float f8 = data2.x;
+  float rho = max(f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8, 0.0);
+  vec2 force = texture(uForce, vUv).xy;
+  vec2 momentum = vec2(
+    f1 - f3 + f5 - f6 - f7 + f8,
+    f2 - f4 + f5 + f6 - f7 - f8
+  );
+  float fluidMask = step(DRY_THRESHOLD, rho);
+  float invRho = fluidMask > 0.0 ? 1.0 / max(rho, MIN_RHO) : 0.0;
+  vec2 vel = momentum * invRho;
+  vec2 appliedForce = force * fluidMask;
+  vec2 accel = appliedForce * uDt * invRho;
+  vel += 0.5 * accel;
+  float uSq = dot(vel, vel);
+  float dot1 = dot(C1, vel);
+  float dot2 = dot(C2, vel);
+  float dot3 = dot(C3, vel);
+  float dot4 = dot(C4, vel);
+  float dot5 = dot(C5, vel);
+  float dot6 = dot(C6, vel);
+  float dot7 = dot(C7, vel);
+  float dot8 = dot(C8, vel);
+  float eq0 = computeEq(W0, rho, 0.0, uSq);
+  float eq1 = computeEq(W_AXIS, rho, dot1, uSq);
+  float eq2 = computeEq(W_AXIS, rho, dot2, uSq);
+  float eq3 = computeEq(W_AXIS, rho, dot3, uSq);
+  float eq4 = computeEq(W_AXIS, rho, dot4, uSq);
+  float eq5 = computeEq(W_DIAG, rho, dot5, uSq);
+  float eq6 = computeEq(W_DIAG, rho, dot6, uSq);
+  float eq7 = computeEq(W_DIAG, rho, dot7, uSq);
+  float eq8 = computeEq(W_DIAG, rho, dot8, uSq);
+  float tau = max(0.51, 0.5 + 3.0 * max(uVisc, 0.0));
+  float omega = 1.0 / tau;
+  float forceScale = (1.0 - 0.5 * omega) * uDt;
+  float uDotF = dot(vel, appliedForce);
+  float force0 = W0 * forceScale * (-3.0 * uDotF);
+  float force1 = W_AXIS * forceScale * (3.0 * dot(C1, appliedForce) + 9.0 * dot1 * dot(C1, appliedForce) - 3.0 * uDotF);
+  float force2 = W_AXIS * forceScale * (3.0 * dot(C2, appliedForce) + 9.0 * dot2 * dot(C2, appliedForce) - 3.0 * uDotF);
+  float force3 = W_AXIS * forceScale * (3.0 * dot(C3, appliedForce) + 9.0 * dot3 * dot(C3, appliedForce) - 3.0 * uDotF);
+  float force4 = W_AXIS * forceScale * (3.0 * dot(C4, appliedForce) + 9.0 * dot4 * dot(C4, appliedForce) - 3.0 * uDotF);
+  float force5 = W_DIAG * forceScale * (3.0 * dot(C5, appliedForce) + 9.0 * dot5 * dot(C5, appliedForce) - 3.0 * uDotF);
+  float force6 = W_DIAG * forceScale * (3.0 * dot(C6, appliedForce) + 9.0 * dot6 * dot(C6, appliedForce) - 3.0 * uDotF);
+  float force7 = W_DIAG * forceScale * (3.0 * dot(C7, appliedForce) + 9.0 * dot7 * dot(C7, appliedForce) - 3.0 * uDotF);
+  float force8 = W_DIAG * forceScale * (3.0 * dot(C8, appliedForce) + 9.0 * dot8 * dot(C8, appliedForce) - 3.0 * uDotF);
+  f0 += omega * (eq0 - f0) + force0;
+  f1 += omega * (eq1 - f1) + force1;
+  f2 += omega * (eq2 - f2) + force2;
+  f3 += omega * (eq3 - f3) + force3;
+  f4 += omega * (eq4 - f4) + force4;
+  f5 += omega * (eq5 - f5) + force5;
+  f6 += omega * (eq6 - f6) + force6;
+  f7 += omega * (eq7 - f7) + force7;
+  f8 += omega * (eq8 - f8) + force8;
+  f0 = max(f0, 0.0);
+  f1 = max(f1, 0.0);
+  f2 = max(f2, 0.0);
+  f3 = max(f3, 0.0);
+  f4 = max(f4, 0.0);
+  f5 = max(f5, 0.0);
+  f6 = max(f6, 0.0);
+  f7 = max(f7, 0.0);
+  f8 = max(f8, 0.0);
+#if LBM_GROUP == 0
+  fragColor = vec4(f0, f1, f2, f3);
+#elif LBM_GROUP == 1
+  fragColor = vec4(f4, f5, f6, f7);
+#else
+  fragColor = vec4(f8, 0.0, 0.0, 1.0);
+#endif
+}
+`
+
+export const LBM_COLLISION_FRAGMENTS = [
+  createLbmFragment(LBM_COLLISION_BASE, 0),
+  createLbmFragment(LBM_COLLISION_BASE, 1),
+  createLbmFragment(LBM_COLLISION_BASE, 2),
+] as const
+
+const LBM_STREAMING_BASE = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uF0;
+uniform sampler2D uF1;
+uniform sampler2D uF2;
+ivec2 clampCoord(ivec2 coord, ivec2 size) {
+  return ivec2(clamp(coord.x, 0, size.x - 1), clamp(coord.y, 0, size.y - 1));
+}
+void main() {
+  ivec2 size = textureSize(uF0, 0);
+  ivec2 coord = ivec2(gl_FragCoord.xy);
+  float f0 = texelFetch(uF0, coord, 0).x;
+  ivec2 fromEast = clampCoord(coord - ivec2(1, 0), size);
+  ivec2 fromNorth = clampCoord(coord - ivec2(0, 1), size);
+  ivec2 fromWest = clampCoord(coord + ivec2(1, 0), size);
+  ivec2 fromSouth = clampCoord(coord + ivec2(0, 1), size);
+  ivec2 fromNE = clampCoord(coord - ivec2(1, 1), size);
+  ivec2 fromNW = clampCoord(coord + ivec2(1, -1), size);
+  ivec2 fromSW = clampCoord(coord + ivec2(1, 1), size);
+  ivec2 fromSE = clampCoord(coord + ivec2(-1, 1), size);
+  float f1 = texelFetch(uF0, fromEast, 0).y;
+  float f2 = texelFetch(uF0, fromNorth, 0).z;
+  float f3 = texelFetch(uF0, fromWest, 0).w;
+  float f4 = texelFetch(uF1, fromSouth, 0).x;
+  float f5 = texelFetch(uF1, fromNE, 0).y;
+  float f6 = texelFetch(uF1, fromNW, 0).z;
+  float f7 = texelFetch(uF1, fromSW, 0).w;
+  float f8 = texelFetch(uF2, fromSE, 0).x;
+#if LBM_GROUP == 0
+  fragColor = vec4(f0, f1, f2, f3);
+#elif LBM_GROUP == 1
+  fragColor = vec4(f4, f5, f6, f7);
+#else
+  fragColor = vec4(f8, 0.0, 0.0, 1.0);
+#endif
+}
+`
+
+export const LBM_STREAMING_FRAGMENTS = [
+  createLbmFragment(LBM_STREAMING_BASE, 0),
+  createLbmFragment(LBM_STREAMING_BASE, 1),
+  createLbmFragment(LBM_STREAMING_BASE, 2),
+] as const
+const LBM_MATCH_BASE = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uF0;
+uniform sampler2D uF1;
+uniform sampler2D uF2;
+uniform sampler2D uState;
+uniform sampler2D uNewDensity;
+${LBM_CONSTANTS}
+void main() {
+  ivec2 coord = ivec2(gl_FragCoord.xy);
+  vec4 data0 = texelFetch(uF0, coord, 0);
+  vec4 data1 = texelFetch(uF1, coord, 0);
+  vec4 data2 = texelFetch(uF2, coord, 0);
+  float f0 = data0.x;
+  float f1 = data0.y;
+  float f2 = data0.z;
+  float f3 = data0.w;
+  float f4 = data1.x;
+  float f5 = data1.y;
+  float f6 = data1.z;
+  float f7 = data1.w;
+  float f8 = data2.x;
+  float rhoOld = max(texture(uState, vUv).z, 0.0);
+  float rhoNew = max(texture(uNewDensity, vUv).r, 0.0);
+  if (rhoNew <= MIN_RHO) {
+    f0 = 0.0;
+    f1 = 0.0;
+    f2 = 0.0;
+    f3 = 0.0;
+    f4 = 0.0;
+    f5 = 0.0;
+    f6 = 0.0;
+    f7 = 0.0;
+    f8 = 0.0;
+  } else if (rhoOld <= DRY_THRESHOLD) {
+    float uSq = 0.0;
+    float eq0 = computeEq(W0, rhoNew, 0.0, uSq);
+    float eqAxis = computeEq(W_AXIS, rhoNew, 0.0, uSq);
+    float eqDiag = computeEq(W_DIAG, rhoNew, 0.0, uSq);
+    f0 = eq0;
+    f1 = eqAxis;
+    f2 = eqAxis;
+    f3 = eqAxis;
+    f4 = eqAxis;
+    f5 = eqDiag;
+    f6 = eqDiag;
+    f7 = eqDiag;
+    f8 = eqDiag;
+  } else {
+    float scale = clamp(rhoNew / max(rhoOld, MIN_RHO), 0.0, 12.0);
+    f0 *= scale;
+    f1 *= scale;
+    f2 *= scale;
+    f3 *= scale;
+    f4 *= scale;
+    f5 *= scale;
+    f6 *= scale;
+    f7 *= scale;
+    f8 *= scale;
+  }
+#if LBM_GROUP == 0
+  fragColor = vec4(f0, f1, f2, f3);
+#elif LBM_GROUP == 1
+  fragColor = vec4(f4, f5, f6, f7);
+#else
+  fragColor = vec4(f8, 0.0, 0.0, 1.0);
+#endif
+}
+`
+
+export const LBM_MATCH_FRAGMENTS = [
+  createLbmFragment(LBM_MATCH_BASE, 0),
+  createLbmFragment(LBM_MATCH_BASE, 1),
+  createLbmFragment(LBM_MATCH_BASE, 2),
+] as const
+
+export const LBM_MACROSCOPIC_FRAGMENT = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uF0;
+uniform sampler2D uF1;
+uniform sampler2D uF2;
+void main() {
+  ivec2 coord = ivec2(gl_FragCoord.xy);
+  vec4 data0 = texelFetch(uF0, coord, 0);
+  vec4 data1 = texelFetch(uF1, coord, 0);
+  vec4 data2 = texelFetch(uF2, coord, 0);
+  float f0 = data0.x;
+  float f1 = data0.y;
+  float f2 = data0.z;
+  float f3 = data0.w;
+  float f4 = data1.x;
+  float f5 = data1.y;
+  float f6 = data1.z;
+  float f7 = data1.w;
+  float f8 = data2.x;
+  float rho = max(f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8, 0.0);
+  float invRho = rho > DRY_THRESHOLD ? 1.0 / max(rho, MIN_RHO) : 0.0;
+  vec2 vel = vec2(
+    f1 - f3 + f5 - f6 - f7 + f8,
+    f2 - f4 + f5 + f6 - f7 - f8
+  ) * invRho;
+  fragColor = vec4(vel, rho, 1.0);
+}
+`
+
+export const LBM_DENSITY_FRAGMENT = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uState;
+void main() {
+  float rho = texture(uState, vUv).z;
+  fragColor = vec4(max(rho, 0.0), 0.0, 0.0, 1.0);
 }
 `
 
@@ -199,38 +542,6 @@ void main() {
   fragColor = vec4(binder, 0.0, 0.0, 1.0);
 }
 `
-
-export const BINDER_FORCE_FRAGMENT = `
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uVelocity;
-uniform sampler2D uBinder;
-uniform vec2 uTexel;
-uniform float uDt;
-uniform float uElasticity;
-uniform float uViscosity;
-
-vec2 binderGradient(vec2 uv) {
-  float left = texture(uBinder, uv - vec2(uTexel.x, 0.0)).r;
-  float right = texture(uBinder, uv + vec2(uTexel.x, 0.0)).r;
-  float bottom = texture(uBinder, uv - vec2(0.0, uTexel.y)).r;
-  float top = texture(uBinder, uv + vec2(0.0, uTexel.y)).r;
-  return vec2(right - left, top - bottom) * 0.5;
-}
-
-void main() {
-  vec2 vel = texture(uVelocity, vUv).xy;
-  float binder = texture(uBinder, vUv).r;
-  vec2 grad = binderGradient(vUv);
-  vec2 springForce = -uElasticity * grad;
-  vel += springForce * uDt;
-  float damping = clamp(uViscosity * binder * uDt, 0.0, 0.95);
-  vel *= (1.0 - damping);
-  fragColor = vec4(vel, 0.0, 1.0);
-}
-`
-
 export const ABSORB_COMMON = `
 precision highp float;
 in vec2 vUv;
@@ -372,59 +683,6 @@ ${ABSORB_COMMON}
 void main() {
   AbsorbResult res = computeAbsorb(vUv);
   fragColor = vec4(res.settled, 1.0);
-}
-`
-
-export const PRESSURE_DIVERGENCE_FRAGMENT = `
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uVelocity;
-uniform vec2 uTexel;
-void main() {
-  float left = texture(uVelocity, vUv - vec2(uTexel.x, 0.0)).x;
-  float right = texture(uVelocity, vUv + vec2(uTexel.x, 0.0)).x;
-  float bottom = texture(uVelocity, vUv - vec2(0.0, uTexel.y)).y;
-  float top = texture(uVelocity, vUv + vec2(0.0, uTexel.y)).y;
-  float divergence = 0.5 * ((right - left) + (top - bottom));
-  fragColor = vec4(divergence, 0.0, 0.0, 1.0);
-}
-`
-
-export const PRESSURE_JACOBI_FRAGMENT = `
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uPressure;
-uniform sampler2D uDivergence;
-uniform vec2 uTexel;
-void main() {
-  float left = texture(uPressure, vUv - vec2(uTexel.x, 0.0)).r;
-  float right = texture(uPressure, vUv + vec2(uTexel.x, 0.0)).r;
-  float bottom = texture(uPressure, vUv - vec2(0.0, uTexel.y)).r;
-  float top = texture(uPressure, vUv + vec2(0.0, uTexel.y)).r;
-  float divergence = texture(uDivergence, vUv).r;
-  float pressure = (left + right + top + bottom - divergence) * 0.25;
-  fragColor = vec4(pressure, 0.0, 0.0, 1.0);
-}
-`
-
-export const PRESSURE_PROJECT_FRAGMENT = `
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uVelocity;
-uniform sampler2D uPressure;
-uniform vec2 uTexel;
-void main() {
-  float left = texture(uPressure, vUv - vec2(uTexel.x, 0.0)).r;
-  float right = texture(uPressure, vUv + vec2(uTexel.x, 0.0)).r;
-  float bottom = texture(uPressure, vUv - vec2(0.0, uTexel.y)).r;
-  float top = texture(uPressure, vUv + vec2(0.0, uTexel.y)).r;
-  vec2 vel = texture(uVelocity, vUv).xy;
-  vec2 gradient = vec2(right - left, top - bottom) * 0.5;
-  vec2 projected = vel - gradient;
-  fragColor = vec4(projected, 0.0, 1.0);
 }
 `
 

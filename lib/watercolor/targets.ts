@@ -66,17 +66,63 @@ export function createFiberField(size: number): THREE.DataTexture {
 
 export function createPaperHeightField(size: number): THREE.DataTexture {
   const data = new Float32Array(size * size * 4)
+
+  const pseudoRandom = (x: number, y: number) => {
+    const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123
+    return n - Math.floor(n)
+  }
+
+  const fade = (t: number) => t * t * (3 - 2 * t)
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+
+  const valueNoise = (x: number, y: number) => {
+    const ix = Math.floor(x)
+    const iy = Math.floor(y)
+    const fx = x - ix
+    const fy = y - iy
+
+    const v00 = pseudoRandom(ix, iy)
+    const v10 = pseudoRandom(ix + 1, iy)
+    const v01 = pseudoRandom(ix, iy + 1)
+    const v11 = pseudoRandom(ix + 1, iy + 1)
+
+    const u = fade(fx)
+    const v = fade(fy)
+
+    const x0 = lerp(v00, v10, u)
+    const x1 = lerp(v01, v11, u)
+    return lerp(x0, x1, v)
+  }
+
+  const octaves = 4
+  const lacunarity = 2.07
+  const persistence = 0.55
+  const scale = 3.5
+
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
       const idx = (y * size + x) * 4
       const u = x / size
       const v = y / size
-      const nx = u - 0.5
-      const ny = v - 0.5
-      const ring = Math.cos(Math.sqrt(nx * nx + ny * ny) * Math.PI * 5.0)
-      const weave = Math.sin((nx * 8.0 + ny * 6.0) * Math.PI)
-      const grain = Math.sin((u * 18.0 - v * 14.0) * Math.PI)
-      const height = Math.min(Math.max(0.5 + 0.18 * ring + 0.12 * weave + 0.08 * grain, 0), 1)
+
+      let amplitude = 1
+      let frequency = 1
+      let total = 0
+      let sum = 0
+
+      for (let octave = 0; octave < octaves; octave += 1) {
+        const nx = (u + 13.27) * frequency * scale
+        const ny = (v + 7.91) * frequency * scale
+        sum += valueNoise(nx, ny) * amplitude
+        total += amplitude
+        amplitude *= persistence
+        frequency *= lacunarity
+      }
+
+      let height = total > 0 ? sum / total : 0
+      height = Math.pow(height, 1.6)
+      height = THREE.MathUtils.clamp(height, 0, 1)
+
       data[idx + 0] = height
       data[idx + 1] = height
       data[idx + 2] = height
@@ -91,5 +137,6 @@ export function createPaperHeightField(size: number): THREE.DataTexture {
   texture.magFilter = THREE.LinearFilter
   texture.minFilter = THREE.LinearFilter
   texture.colorSpace = THREE.NoColorSpace
+  texture.name = 'PaperHeightField'
   return texture
 }

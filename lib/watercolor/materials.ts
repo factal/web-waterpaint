@@ -45,7 +45,10 @@ import { type MaterialMap } from './types'
 
 const sanitizeShader = (code: string) => code.trimStart()
 
-function createMaterial(fragmentShader: string, uniforms: Record<string, THREE.IUniform>): THREE.RawShaderMaterial {
+function createMaterial(
+  fragmentShader: string,
+  uniforms: Record<string, THREE.IUniform>,
+): THREE.RawShaderMaterial {
   return new THREE.RawShaderMaterial({
     uniforms,
     vertexShader: sanitizeShader(FULLSCREEN_VERTEX),
@@ -73,6 +76,9 @@ export function createMaterials(
     uRadius: { value: 0 },
     uFlow: { value: 0 },
     uToolType: { value: 0 },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
   })
 
   const splatVelocity = createMaterial(SPLAT_VELOCITY_FRAGMENT, {
@@ -80,6 +86,9 @@ export function createMaterials(
     uCenter: centerUniform(),
     uRadius: { value: 0 },
     uFlow: { value: 0 },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
   })
 
   const splatPigment = createMaterial(SPLAT_PIGMENT_FRAGMENT, {
@@ -89,6 +98,9 @@ export function createMaterials(
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uPigment: pigmentUniform(),
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
   })
 
   const splatBinder = createMaterial(SPLAT_BINDER_FRAGMENT, {
@@ -98,6 +110,9 @@ export function createMaterials(
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uBinderStrength: { value: DEFAULT_BINDER_PARAMS.injection },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
   })
 
   const advectVelocity = createMaterial(ADVECT_VELOCITY_FRAGMENT, {

@@ -40,7 +40,7 @@ export default class WatercolorSimulation {
   private readonly quad: THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial>
   private readonly materials: MaterialMap
   private readonly fiberTexture: THREE.DataTexture
-  private readonly paperHeightTexture: THREE.DataTexture
+  private readonly paperHeightMap: THREE.DataTexture
   private readonly pressure: PingPongTarget
   private readonly divergence: THREE.WebGLRenderTarget
   private readonly pressureIterations = 20
@@ -75,12 +75,12 @@ export default class WatercolorSimulation {
     this.pressure = createPingPong(size, textureType)
     this.divergence = createRenderTarget(size, textureType)
     this.fiberTexture = createFiberField(size)
-    this.paperHeightTexture = createPaperHeightField(size)
+    this.paperHeightMap = createPaperHeightField(size)
 
     this.scene = new THREE.Scene()
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
-    this.materials = createMaterials(this.texelSize, this.fiberTexture, this.paperHeightTexture)
+    this.materials = createMaterials(this.texelSize, this.fiberTexture, this.paperHeightMap)
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.materials.zero)
     this.scene.add(this.quad)
@@ -96,10 +96,34 @@ export default class WatercolorSimulation {
     return this.compositeTarget.texture
   }
 
+  get paperHeightTexture(): THREE.DataTexture {
+    return this.paperHeightMap
+  }
+
   // Inject water or pigment into the simulation at a given position.
   splat(brush: BrushSettings) {
-    const { center, radius, flow, type, color } = brush
+    const { center, radius, flow, type, color, dryness = 0, dryThreshold } = brush
     const toolType = type === 'water' ? 0 : 1
+
+    const normalizedFlow = THREE.MathUtils.clamp(flow, 0, 1)
+    const dryBase = type === 'water' ? 0 : THREE.MathUtils.clamp(dryness, 0, 1)
+    const dryInfluence = THREE.MathUtils.clamp(dryBase * (1 - 0.55 * normalizedFlow), 0, 1)
+    const computedThreshold = THREE.MathUtils.lerp(-0.15, 0.7, dryInfluence)
+    const threshold = THREE.MathUtils.clamp(dryThreshold ?? computedThreshold, -0.25, 1.0)
+
+    const splatMaterials = [
+      this.materials.splatHeight,
+      this.materials.splatVelocity,
+      this.materials.splatPigment,
+      this.materials.splatBinder,
+    ]
+
+    splatMaterials.forEach((material) => {
+      const uniforms = material.uniforms as Record<string, THREE.IUniform>
+      uniforms.uPaperHeight.value = this.paperHeightMap
+      uniforms.uDryThreshold.value = threshold
+      uniforms.uDryInfluence.value = dryInfluence
+    })
 
     const splatHeight = this.materials.splatHeight
     splatHeight.uniforms.uSource.value = this.targets.H.read.texture
@@ -117,7 +141,6 @@ export default class WatercolorSimulation {
     splatVelocity.uniforms.uFlow.value = flow
     this.renderToTarget(splatVelocity, this.targets.UV.write)
     this.targets.UV.swap()
-
 
     const splatPigment = this.materials.splatPigment
     splatPigment.uniforms.uSource.value = this.targets.C.read.texture
@@ -401,7 +424,7 @@ export default class WatercolorSimulation {
     this.velocityMaxMaterial.dispose()
     this.clearTargets()
     this.fiberTexture.dispose()
-    this.paperHeightTexture.dispose()
+    this.paperHeightMap.dispose()
     this.velocityReductionTargets.forEach((target) => target.dispose())
   }
 

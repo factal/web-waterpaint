@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 import { createMaterials, createVelocityMaxMaterial } from './materials'
-import { createFiberField, createPingPong, createRenderTarget } from './targets'
+import { createPaperField, createPingPong, createRenderTarget } from './targets'
 import {
   DEFAULT_BINDER_PARAMS,
   DEFAULT_DT,
@@ -45,6 +45,7 @@ export default class WatercolorSimulation {
   private readonly quad: THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial>
   private readonly materials: MaterialMap
   private readonly fiberTexture: THREE.DataTexture
+  private readonly paperHeightTexture: THREE.DataTexture
   private readonly lbmTargets: [PingPongTarget, PingPongTarget, PingPongTarget]
   private readonly velocityReductionTargets: THREE.WebGLRenderTarget[]
   private readonly velocityMaxMaterial: THREE.RawShaderMaterial
@@ -78,12 +79,14 @@ export default class WatercolorSimulation {
     }
     this.forceTarget = createRenderTarget(size, textureType)
     this.compositeTarget = createRenderTarget(size, textureType)
-    this.fiberTexture = createFiberField(size)
+    const paperField = createPaperField(size)
+    this.fiberTexture = paperField.fiber
+    this.paperHeightTexture = paperField.height
 
     this.scene = new THREE.Scene()
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
-    this.materials = createMaterials(this.texelSize, this.fiberTexture)
+    this.materials = createMaterials(this.texelSize, this.fiberTexture, this.paperHeightTexture)
     this.lbmTargets = [this.targets.F0, this.targets.F1, this.targets.F2]
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.materials.zero)
@@ -158,6 +161,7 @@ export default class WatercolorSimulation {
       cfl,
       maxSubsteps,
       binder,
+      paperTextureStrength,
     } = params
 
     this.binderSettings = { ...binder }
@@ -236,6 +240,7 @@ export default class WatercolorSimulation {
         humidityInfluence,
         granStrength,
         backrunStrength,
+        paperTextureStrength,
         absorbTime,
         timeOffset,
         absorbFloor,
@@ -253,6 +258,7 @@ export default class WatercolorSimulation {
         humidityInfluence,
         granStrength,
         backrunStrength,
+        paperTextureStrength,
         absorbTime,
         timeOffset,
         absorbFloor,
@@ -270,6 +276,7 @@ export default class WatercolorSimulation {
         humidityInfluence,
         granStrength,
         backrunStrength,
+        paperTextureStrength,
         absorbTime,
         timeOffset,
         absorbFloor,
@@ -287,6 +294,7 @@ export default class WatercolorSimulation {
         humidityInfluence,
         granStrength,
         backrunStrength,
+        paperTextureStrength,
         absorbTime,
         timeOffset,
         absorbFloor,
@@ -304,6 +312,7 @@ export default class WatercolorSimulation {
         humidityInfluence,
         granStrength,
         backrunStrength,
+        paperTextureStrength,
         absorbTime,
         timeOffset,
         absorbFloor,
@@ -413,6 +422,7 @@ export default class WatercolorSimulation {
     this.velocityMaxMaterial.dispose()
     this.clearTargets()
     this.fiberTexture.dispose()
+    this.paperHeightTexture.dispose()
     this.velocityReductionTargets.forEach((target) => target.dispose())
   }
 
@@ -472,6 +482,7 @@ export default class WatercolorSimulation {
     humidity: number,
     granStrength: number,
     backrunStrength: number,
+    paperStrength: number,
     absorbTime: number,
     timeOffset: number,
     absorbFloor: number,
@@ -482,6 +493,7 @@ export default class WatercolorSimulation {
     uniforms.uWet.value = this.targets.W.read.texture
     uniforms.uDeposits.value = this.targets.DEP.read.texture
     if (uniforms.uSettled) uniforms.uSettled.value = this.targets.S.read.texture
+    if (uniforms.uPaperHeight) uniforms.uPaperHeight.value = this.paperHeightTexture
     uniforms.uAbsorb.value = absorb
     uniforms.uEvap.value = evap
     uniforms.uEdge.value = edge
@@ -491,6 +503,7 @@ export default class WatercolorSimulation {
     if (uniforms.uSettle) uniforms.uSettle.value = settle
     if (uniforms.uGranStrength) uniforms.uGranStrength.value = granStrength
     if (uniforms.uBackrunStrength) uniforms.uBackrunStrength.value = backrunStrength
+    if (uniforms.uPaperStrength) uniforms.uPaperStrength.value = paperStrength
     if (uniforms.uAbsorbTime) uniforms.uAbsorbTime.value = absorbTime
     if (uniforms.uAbsorbTimeOffset) uniforms.uAbsorbTimeOffset.value = timeOffset
     if (uniforms.uAbsorbFloor) uniforms.uAbsorbFloor.value = absorbFloor

@@ -37,6 +37,7 @@ export interface SimulationParams {
   stateAbsorption: boolean
   granulation: boolean
   backrunStrength: number
+  paperTextureStrength: number
   absorbExponent: number
   absorbTimeOffset: number
   absorbMinFlux: number

@@ -551,6 +551,7 @@ uniform sampler2D uPigment;
 uniform sampler2D uWet;
 uniform sampler2D uDeposits;
 uniform sampler2D uSettled;
+uniform sampler2D uPaperHeight;
 uniform float uAbsorb;
 uniform float uEvap;
 uniform float uEdge;
@@ -563,6 +564,7 @@ uniform float uHumidity;
 uniform float uSettle;
 uniform float uGranStrength;
 uniform float uBackrunStrength;
+uniform float uPaperStrength;
 uniform vec2 uTexel;
 
 struct AbsorbResult {
@@ -583,6 +585,19 @@ AbsorbResult computeAbsorb(vec2 uv) {
 
   vec2 du = vec2(uTexel.x, 0.0);
   vec2 dv = vec2(0.0, uTexel.y);
+  float paperStrength = max(uPaperStrength, 0.0);
+  float paperCavity = 0.0;
+  float paperRough = 0.0;
+  if (paperStrength > 1e-4) {
+    float hPaper = texture(uPaperHeight, uv).r;
+    float hPaperL = texture(uPaperHeight, uv - du).r;
+    float hPaperR = texture(uPaperHeight, uv + du).r;
+    float hPaperB = texture(uPaperHeight, uv - dv).r;
+    float hPaperT = texture(uPaperHeight, uv + dv).r;
+    float lapPaper = (hPaperL + hPaperR + hPaperB + hPaperT) - 4.0 * hPaper;
+    paperCavity = clamp(lapPaper * 0.65, -1.0, 1.0);
+    paperRough = clamp(abs(lapPaper) * 0.5, 0.0, 1.0);
+  }
   float hx = texture(uHeight, uv + du).r - texture(uHeight, uv - du).r;
   float hy = texture(uHeight, uv + dv).r - texture(uHeight, uv - dv).r;
   float edgeBias = uEdge * 0.5 * sqrt(hx * hx + hy * hy);
@@ -612,6 +627,10 @@ AbsorbResult computeAbsorb(vec2 uv) {
   }
   float remFrac = clamp(min(1.0, remRaw), 0.0, 1.0);
   float depFrac = clamp(remFrac * (0.5 + edgeBias) + uDepBase * edgeBias, 0.0, 1.0);
+  if (paperStrength > 1e-4) {
+    float depositScale = clamp(1.0 + paperStrength * paperCavity * 0.35, 0.0, 2.0);
+    depFrac = clamp(depFrac * depositScale, 0.0, 1.0);
+  }
   vec3 depAdd = pigment * depFrac;
   dep += depAdd;
   pigment = max(pigment - depAdd, vec3(0.0));
@@ -621,11 +640,22 @@ AbsorbResult computeAbsorb(vec2 uv) {
   pigment = max(pigment - bloomDep, vec3(0.0));
 
   float settleRate = clamp(uSettle, 0.0, 1.0);
+  if (paperStrength > 1e-4) {
+    float settleScale = clamp(1.0 + paperStrength * paperCavity * 0.2, 0.0, 2.0);
+    settleRate = clamp(settleRate * settleScale, 0.0, 1.0);
+  }
   vec3 settleAdd = pigment * settleRate;
   pigment = max(pigment - settleAdd, vec3(0.0));
   vec3 settledNew = settled + settleAdd;
 
   float granCoeff = clamp(uGranStrength * edgeBias, 0.0, 1.0);
+  if (paperStrength > 1e-4) {
+    float cavityBias = paperStrength * paperCavity * 0.25;
+    float roughBoost = paperStrength * paperRough * 0.35;
+    float adjustedGran = granCoeff + cavityBias;
+    adjustedGran += roughBoost * (1.0 - granCoeff);
+    granCoeff = clamp(adjustedGran, 0.0, 1.0);
+  }
   vec3 granSource = pigment + settledNew;
   vec3 granDep = granSource * granCoeff;
   vec3 totalSource = max(granSource, vec3(1e-5));

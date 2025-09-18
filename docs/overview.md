@@ -77,7 +77,7 @@ Leva panels in the demo map directly to `SimulationParams` fields:
 - **Flow Dynamics** – Gravity, viscosity, CFL safety factor, and maximum adaptive substeps.
 - **Binder** – Runtime overrides for binder injection, diffusion, decay, elasticity, viscosity, and buoyancy.
 - **Brush Reservoir** – Water/pigment capacities and per-stamp consumption rates.
-- **Simulation Features** – Toggles for state-dependent absorption and granulation for debugging.
+- **Simulation Features** – Toggles for state-dependent absorption, granulation, and a scalar for paper-texture influence.
 
 ## References
 

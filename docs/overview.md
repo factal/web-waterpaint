@@ -1,104 +1,66 @@
 # Watercolor Simulation Overview
 
-This document describes the simulation implemented in the Next.js/react-three-fiber prototype. The current build implements the following roadmap items:
+The watercolor solver now follows the physical model described in *Realistic Paint Simulation Based on Fluidity, Diffusion, and Absorption*. A predictive–corrective SPH (PCISPH) integrator evolves a mixture of solvent and paint particles, each particle carries pigment concentration and binder content, and the resulting deposition is shaded through a Kubelka–Munk composite pass.
 
-- Pressure projection to maintain a divergence-free velocity field.
-- Anisotropic paper diffusion driven by a procedurally generated fibre texture.
-- State-dependent absorption and evaporation tied to paper wetness and water height.
-- Granulation via a settled pigment reservoir that feeds into deposition.
-- Backruns/Blooms that emphasise advancing wet edges using the wetness gradient.
-- CFL-based adaptive timestep with automatic sub-stepping when velocities spike.
-- Finite-thickness Kubelka–Munk composite with adjustable layer scale.
+## Simulation State
 
-## State Fields
-
-| Symbol | Texture | Description |
-| ------ | ------- | ----------- |
-| `H` | ping-pong RGBA16F | Water height (R channel). |
-| `UV` | ping-pong RGBA16F | Surface velocity (RG). |
-| `C` | ping-pong RGBA16F | Dissolved pigment carried by the flow (RGB). |
-| `DEP` | ping-pong RGBA16F | Pigment deposited on the paper (RGB). |
-| `W` | ping-pong RGBA16F | Paper wetness / retained moisture (R). |
-| `S` | ping-pong RGBA16F | Settled pigment reservoir used for granulation (RGB). |
-| `KM` | single RGBA16F | Kubelka–Munk composite colour rendered to screen. |
-|
-
-All simulation textures use half floats so they remain filterable on WebGL2.
+- **Particle buffers** – Typed arrays hold particle position, velocity, density, pressure, binder strength, pigment concentrations (RGB), infiltration depth, and accumulated absorption time for up to `SPH_MAX_PARTICLES` entries.
+- **Spatial grid** – A uniform hash grid accelerates neighbour lookups for density, pressure, and diffusion kernels.
+- **Paper fields** – CPU-side grids track deposited pigment (RGB in `depositData`) and paper wetness. Both are uploaded each frame as `DataTexture`s.
+- **Composite target** – A `WebGLRenderTarget` stores the final Kubelka–Munk colour, driven by the deposit texture and the pigment optical coefficients.
 
 ## Frame Pipeline
 
-1. **Splat (brush injection)**  
-   Injects water and optionally pigment using a Gaussian falloff. A radial velocity push is added to mimic brush agitation. Parameters come from the Leva "Brush" controls.
+1. **Brush splat** – Pointer input spawns particles within the brush radius. Water splats create solvent particles while pigment splats inject binder-rich paint particles with the requested colour.
+2. **External forces** – Gravity, viscosity, and binder-dependent viscoelasticity accumulate accelerations. Viscous forces use the viscosity kernel laplacian, while binder elasticity applies spring-like corrections using the spiky gradient.
+3. **PCISPH pressure solve** – Predictive velocities and positions integrate the external forces, then a fixed number of pressure iterations enforce incompressibility. Each iteration recomputes density with the poly6 kernel, updates pressure via the predictive-corrective relaxation factor, and applies the symmetric pressure gradient force.
+4. **Binder & pigment diffusion** – Fick's second law is evaluated per particle using equation (7):
+   \[ D \nabla^2 c_i = D \sum_j m_j \frac{c_j - c_i}{\rho_j} \nabla^2 W_{ij}. \]
+   The same laplacian smooths binder concentrations, while an exponential decay parameter lets binder relax over time.
+5. **Lucas–Washburn absorption** – Each particle maintains an infiltration depth `ℓ`. The Lucas–Washburn rate
+   \[ \frac{d\ell}{dt} = \frac{r_c^2}{8 \, \mu \, \ell}(P_h + P_c) \]
+   governs how quickly liquid penetrates the paper. Hydrodynamic pressure `P_h` is estimated from local density and gravity, while the capillary term `P_c = 2σ cosθ / r_c` uses the configured surface tension and contact angle. The absorption flux removes particle mass, transfers a proportional amount of pigment to the deposit texture, raises the wetness field, and advances `ℓ`.
+6. **Evaporation** – A simple humidity decay reduces the wetness field based on the UI evaporation parameter so dry paper regains absorption capacity over time.
+7. **Kubelka–Munk composite** – Deposited pigment drives the optical model from `lib/watercolor/shaders.ts`. The composite material converts pigment load to K/S coefficients and multiplies the paper colour by the resulting reflectance.
 
-2. **Pressure projection (Stam 1999)**  
-   An unsteady velocity field is projected onto a divergence-free subspace by solving the Poisson equation `∇²p = div(u) / dt` (20 Jacobi iterations). The gradient of `p` is subtracted from `u` to enforce incompressibility. This stabilises edge flows and keeps puddles from expanding indefinitely.
+## Viscoelastic Binder
 
-3. **Advection**  
-   Semi-Lagrangian advection transports `H` and `C` using the updated velocity. Velocity is also damped by viscosity and accelerated by the surface gradient term `u += -dt * g * ∇h`.
-   Before each frame, the solver measures the current maximum velocity magnitude via a GPU reduction. If `dt` violates the configured CFL safety bound, it subdivides the frame into multiple substeps (up to `maxSubsteps`) to keep `|u|·dt ≤ cfl·dx`.
+Binder concentration rides with each particle and influences three behaviours:
 
-4. **Absorption / Evaporation / Granulation**  
-   The absorb pass now evaluates per-pixel rates:
+- **Force feedback** – Binder-rich particles receive stronger elastic spring forces, causing strokes to retain shape and resist sudden shear.
+- **Viscosity boost** – The viscosity coefficient rises with binder concentration, modelling the tacky motion of heavy paint.
+- **Diffusion & decay** – Binder diffuses between neighbours (sharing the same laplacian as pigment) and decays exponentially, imitating gradual relaxation as the medium evens out.
 
-   - Absorption: `A = A₀ * (1 - w)^{β}` with exponent `β = 1.4`, encouraging drier paper to pull in more water.
-   - Evaporation: `E = E₀ * √h * mix(1, 1 - w, λ)` with `λ = 0.6`, reducing evaporation on saturated paper.
-   - Granulation reservoir: a percentage `v_settle * dt` of the remaining dissolved pigment enters the settled buffer `S` before deposition.
-   - Deposition: dissolved pigment plus the settled reservoir feed a depth factor `k_dep = depBase + granStrength * edgeBias` to reinforce pigment along ridges (`edgeBias ∝ |∇h|`). The deposited mass is subtracted from both dissolved and settled pools proportionally.
-   - Blooms/backruns: positive wetness gradients (`max(w - w_neighbor, 0)`) scale an extra deposit term `k_back` so advancing fronts leave cauliflower blooms. The strength comes from the "Backrun Strength" slider and clamps itself to the available dissolved pigment.
+`SimulationParams.binder` exposes injection amount plus diffusion, decay, elasticity, and viscosity multipliers so the UI can emulate different media.
 
-   The pass outputs updated `DEP`, `H`, `C`, `W`, and `S` using separate raw-shader materials fed with the same uniforms.
+## Absorption Controls
 
-5. **Anisotropic paper diffusion**  
-   After absorption the wetness buffer is diffused using an oriented tensor field derived from a procedural fibre texture. The shader samples `(cosθ, sinθ, d∥, d⊥)` per texel and integrates `w_t = ∇·(D ∇w) + replenish`, nudging water along the grain while replenishing drier paper with a portion of the absorbed water.
+State-dependent absorption mirrors the Lucas–Washburn behaviour:
 
-6. **Composite (Finite-thickness Kubelka–Munk)**  
-   Deposited pigment produces absorption `K` and scattering `S` coefficients. We approximate finite thickness by scaling both coefficients with the accumulated pigment mass (controlled by `KM_LAYER_SCALE`) before evaluating the infinite-layer KM solution. This darkens layered pigment while keeping the formulation numerically stable on WebGL.
+- `absorb` scales the base flux. When `stateAbsorption` is enabled the flux is modulated by humidity `(1 - w)^{β}` with `β = absorbExponent` and a time term `1 / √(t + absorbTimeOffset)`.
+- `absorbMinFlux` provides a floor so very thin films continue drying numerically.
+- Deposited pigment inherits an edge multiplier (`edge`) and optional granulation noise to mimic backruns and granular pigment clumping.
 
-## Granulation Reservoir (`S`)
+## Module Layout
 
-The settled buffer captures pigment that precipitates but has not yet bonded to the paper surface. Settling is proportional to dissolved pigment (`S += v_settle * C * dt`), while deposition draws from both dissolved and settled pigment. This produces the darker grainy rims characteristic of traditional watercolour granulation.
+- `WatercolorSimulation.ts` – Owns the particle buffers, PCISPH integration loop, absorption logic, and rendering orchestration.
+- `materials.ts` – Builds the zero-clear and composite materials.
+- `shaders.ts` – Contains the fullscreen vertex, clear fragment, and Kubelka–Munk composite shader sources.
+- `constants.ts` – Shared simulation constants and default parameter values (SPH radius, rest density, Lucas–Washburn coefficients, etc.).
+- `types.ts` – Brush, binder, reservoir, and parameter interfaces used across the app.
 
-## Parameter Controls
+## Parameter Mapping
 
-Leva UI folders map to the simulation parameters:
+UI controls in `app/page.tsx` map to simulation parameters as follows:
 
-- **Brush**: tool, radius, and flow. Pigment tools map to CMY pigment reservoirs.
-- **Drying & Deposits**: base absorption `A₀`, evaporation `E₀`, edge bias strength, and backrun intensity (`k_back`).
-- **Flow Dynamics**: gravity, viscosity, CFL safety factor, and maximum substeps for adaptive timestepping.
-- **Brush Reservoir**: capacity and consumption sliders for water/pigment charge and stamp spacing.
-- **Simulation Features**: toggles for state-dependent drying and granulation, useful when isolating regressions.
-
-Global constants (tuned empirically) control the exponents, humidity coupling, settle rate, and granulation strength. They can be adjusted in `WatercolorSimulation.ts` if different paper styles are desired.
-
-## Shaders
-
-| Stage | Shader constant | Notes |
-| ----- | --------------- | ----- |
-| Brush splat | `SPLAT_*` | Adds water/pigment and radial velocity. |
-| Advection | `ADVECT_*` | Semi-Lagrangian transport with slope-driven acceleration. |
-| Absorption suite | `ABSORB_*` | Shared helper `computeAbsorb()` calculates state-dependent rates and granulation. |
-| Pressure solve | `PRESSURE_*` | Divergence, Jacobi, and projection passes. |
-| Paper diffusion | `PAPER_DIFFUSION_FRAGMENT` | Anisotropic diffusion along fibres with replenish term. |
-| Composite | `COMPOSITE_FRAGMENT` | Kubelka–Munk reflectance shading. |
-
-## Implementation Notes
-
-- RawShaderMaterial is used for all compute shaders to avoid three.js shader chunk injection and to work directly with `#version 300 es` WebGL2 shaders.
-- Ping-pong render targets (`createPingPong`) are used for every mutable field so that reads and writes remain disjoint.
-- The fibre texture is generated procedurally as a `DataTexture`, encoding orientation and diffusion coefficients for each texel. This avoids additional assets and keeps the grain reproducible.
-- Finite-thickness KM uses a tunable layer scale (`KM_LAYER_SCALE`) that maps deposited pigment mass to optical thickness, with hyperbolic formulations to avoid the infinite-layer shortcut.
-- Granulation and diffusion rely on constants tuned for stability on half-float buffers; extreme parameter values may demand higher iteration counts or clamping adjustments.
+- **Flow dynamics** – `grav`, `visc`, `cfl`, and `maxSubsteps` affect gravity strength, baseline viscosity, and adaptive timestep selection for the PCISPH loop.
+- **Drying** – `absorb`, `absorbExponent`, `absorbTimeOffset`, `absorbMinFlux`, and `stateAbsorption` tune the Lucas–Washburn flux, while `evap` drives wetness decay.
+- **Binder** – Passed directly to `binderSettings` to control viscoelastic response.
+- **Edge & granulation** – Influence deposition intensity and whether noise modulates pigment buildup.
 
 ## References
 
-- Stam, J. *Stable Fluids*, SIGGRAPH 1999. (advection & projection)
-- Curtis, C., Anderson, S., Seims, J. *Computer Generated Watercolor*, SIGGRAPH 1997. (deposition & edge darkening)
-- Deegan, R. D. et al. *Capillary flow as the cause of ring stains from dried liquid drops*, Nature 1997. (coffee-ring effect)
-- Kubelka, P., Munk, F. *Ein Beitrag zur Optik der Farbanstriche*, 1931. (KM reflectance)
-- Lucas, R. (1918), Washburn, E. W. (1921). *Capillary flow in porous media*. (absorption law)
-
-
-
-
-
-
+- Solenthaler, B., Pajarola, R. “Predictive-Corrective Incompressible SPH.” ACM SIGGRAPH 2009.
+- Mi You et al. “Realistic Paint Simulation Based on Fluidity, Diffusion, and Absorption.” *Computer Animation and Virtual Worlds*, 2013.
+- Stam, J. “Stable Fluids.” SIGGRAPH 1999 (for historical context).
+- Lucas, R. (1918), Washburn, E. W. (1921). “Capillary flow in porous media.”

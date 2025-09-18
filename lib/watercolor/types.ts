@@ -8,6 +8,8 @@ export interface BrushSettings {
   flow: number
   type: BrushType
   color: [number, number, number]
+  dryness?: number
+  dryThreshold?: number
 }
 
 export type ChannelCoefficients = [number, number, number]
@@ -43,6 +45,7 @@ export interface SimulationParams {
   edge: number
   stateAbsorption: boolean
   granulation: boolean
+  paperTextureStrength: number
   backrunStrength: number
   absorbExponent: number
   absorbTimeOffset: number

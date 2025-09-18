@@ -14,6 +14,7 @@ export const DEFAULT_ABSORB_MIN_FLUX = 0.02
 export const HUMIDITY_INFLUENCE = 0.6
 export const GRANULATION_SETTLE_RATE = 0.28
 export const GRANULATION_STRENGTH = 0.45
+export const DEFAULT_PAPER_TEXTURE_STRENGTH = 0.8
 
 export const PIGMENT_K = [
   new THREE.Vector3(1.6, 0.1, 0.1),

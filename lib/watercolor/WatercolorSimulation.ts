@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 import { createMaterials, createVelocityMaxMaterial } from './materials'
-import { createFiberField, createPingPong, createRenderTarget } from './targets'
+import { createFiberField, createPaperHeightField, createPingPong, createRenderTarget } from './targets'
 import {
   DEFAULT_BINDER_PARAMS,
   DEFAULT_DT,
@@ -40,6 +40,7 @@ export default class WatercolorSimulation {
   private readonly quad: THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial>
   private readonly materials: MaterialMap
   private readonly fiberTexture: THREE.DataTexture
+  private readonly paperHeightMap: THREE.DataTexture
   private readonly pressure: PingPongTarget
   private readonly divergence: THREE.WebGLRenderTarget
   private readonly pressureIterations = 20
@@ -74,11 +75,12 @@ export default class WatercolorSimulation {
     this.pressure = createPingPong(size, textureType)
     this.divergence = createRenderTarget(size, textureType)
     this.fiberTexture = createFiberField(size)
+    this.paperHeightMap = createPaperHeightField(size)
 
     this.scene = new THREE.Scene()
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
-    this.materials = createMaterials(this.texelSize, this.fiberTexture)
+    this.materials = createMaterials(this.texelSize, this.fiberTexture, this.paperHeightMap)
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.materials.zero)
     this.scene.add(this.quad)
@@ -94,10 +96,34 @@ export default class WatercolorSimulation {
     return this.compositeTarget.texture
   }
 
+  get paperHeightTexture(): THREE.DataTexture {
+    return this.paperHeightMap
+  }
+
   // Inject water or pigment into the simulation at a given position.
   splat(brush: BrushSettings) {
-    const { center, radius, flow, type, color } = brush
+    const { center, radius, flow, type, color, dryness = 0, dryThreshold } = brush
     const toolType = type === 'water' ? 0 : 1
+
+    const normalizedFlow = THREE.MathUtils.clamp(flow, 0, 1)
+    const dryBase = type === 'water' ? 0 : THREE.MathUtils.clamp(dryness, 0, 1)
+    const dryInfluence = THREE.MathUtils.clamp(dryBase * (1 - 0.55 * normalizedFlow), 0, 1)
+    const computedThreshold = THREE.MathUtils.lerp(-0.15, 0.7, dryInfluence)
+    const threshold = THREE.MathUtils.clamp(dryThreshold ?? computedThreshold, -0.25, 1.0)
+
+    const splatMaterials = [
+      this.materials.splatHeight,
+      this.materials.splatVelocity,
+      this.materials.splatPigment,
+      this.materials.splatBinder,
+    ]
+
+    splatMaterials.forEach((material) => {
+      const uniforms = material.uniforms as Record<string, THREE.IUniform>
+      uniforms.uPaperHeight.value = this.paperHeightMap
+      uniforms.uDryThreshold.value = threshold
+      uniforms.uDryInfluence.value = dryInfluence
+    })
 
     const splatHeight = this.materials.splatHeight
     splatHeight.uniforms.uSource.value = this.targets.H.read.texture
@@ -115,7 +141,6 @@ export default class WatercolorSimulation {
     splatVelocity.uniforms.uFlow.value = flow
     this.renderToTarget(splatVelocity, this.targets.UV.write)
     this.targets.UV.swap()
-
 
     const splatPigment = this.materials.splatPigment
     splatPigment.uniforms.uSource.value = this.targets.C.read.texture
@@ -151,6 +176,7 @@ export default class WatercolorSimulation {
       edge,
       stateAbsorption,
       granulation,
+      paperTextureStrength,
       backrunStrength,
       absorbExponent,
       absorbTimeOffset,
@@ -263,6 +289,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbDeposit, this.targets.DEP.write)
 
@@ -280,6 +307,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbHeight, this.targets.H.write)
 
@@ -297,6 +325,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbPigment, this.targets.C.write)
 
@@ -314,6 +343,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbWet, this.targets.W.write)
 
@@ -331,6 +361,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbSettled, this.targets.S.write)
 
@@ -411,6 +442,7 @@ export default class WatercolorSimulation {
     this.velocityMaxMaterial.dispose()
     this.clearTargets()
     this.fiberTexture.dispose()
+    this.paperHeightMap.dispose()
     this.velocityReductionTargets.forEach((target) => target.dispose())
   }
 
@@ -469,6 +501,7 @@ export default class WatercolorSimulation {
     absorbTime: number,
     timeOffset: number,
     absorbFloor: number,
+    paperTextureStrength: number,
   ) {
     const uniforms = material.uniforms as Record<string, THREE.IUniform>
     uniforms.uHeight.value = this.targets.H.read.texture
@@ -491,6 +524,7 @@ export default class WatercolorSimulation {
     if (uniforms.uAbsorbTime) uniforms.uAbsorbTime.value = absorbTime
     if (uniforms.uAbsorbTimeOffset) uniforms.uAbsorbTimeOffset.value = timeOffset
     if (uniforms.uAbsorbFloor) uniforms.uAbsorbFloor.value = absorbFloor
+    if (uniforms.uPaperHeightStrength) uniforms.uPaperHeightStrength.value = paperTextureStrength
   }
 
   private createVelocityReductionTargets(size: number): THREE.WebGLRenderTarget[] {
@@ -576,4 +610,5 @@ export {
   DEFAULT_ABSORB_EXPONENT,
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_ABSORB_MIN_FLUX,
+  DEFAULT_PAPER_TEXTURE_STRENGTH,
 } from './constants'

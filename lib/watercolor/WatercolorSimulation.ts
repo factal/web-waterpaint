@@ -15,11 +15,12 @@ import {
   type BinderParams,
   type BrushSettings,
   type MaterialMap,
+  type MaterialTriplet,
   type PingPongTarget,
   type SimulationParams,
 } from './types'
 
-// GPU-driven watercolor solver combining shallow-water flow, pigment transport, and paper optics.
+// GPU-driven watercolor solver combining lattice-Boltzmann flow, pigment transport, and paper optics.
 // WatercolorSimulation coordinates all render passes and exposes a simple API.
 export default class WatercolorSimulation {
   private readonly renderer: THREE.WebGLRenderer
@@ -33,16 +34,18 @@ export default class WatercolorSimulation {
     DEP: PingPongTarget
     W: PingPongTarget
     S: PingPongTarget
+    F0: PingPongTarget
+    F1: PingPongTarget
+    F2: PingPongTarget
   }
+  private readonly forceTarget: THREE.WebGLRenderTarget
   private readonly compositeTarget: THREE.WebGLRenderTarget
   private readonly scene: THREE.Scene
   private readonly camera: THREE.OrthographicCamera
   private readonly quad: THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial>
   private readonly materials: MaterialMap
   private readonly fiberTexture: THREE.DataTexture
-  private readonly pressure: PingPongTarget
-  private readonly divergence: THREE.WebGLRenderTarget
-  private readonly pressureIterations = 20
+  private readonly lbmTargets: [PingPongTarget, PingPongTarget, PingPongTarget]
   private readonly velocityReductionTargets: THREE.WebGLRenderTarget[]
   private readonly velocityMaxMaterial: THREE.RawShaderMaterial
   private readonly velocityReadBuffer = new Float32Array(4)
@@ -69,16 +72,19 @@ export default class WatercolorSimulation {
       DEP: createPingPong(size, textureType),
       W: createPingPong(size, textureType),
       S: createPingPong(size, textureType),
+      F0: createPingPong(size, textureType),
+      F1: createPingPong(size, textureType),
+      F2: createPingPong(size, textureType),
     }
+    this.forceTarget = createRenderTarget(size, textureType)
     this.compositeTarget = createRenderTarget(size, textureType)
-    this.pressure = createPingPong(size, textureType)
-    this.divergence = createRenderTarget(size, textureType)
     this.fiberTexture = createFiberField(size)
 
     this.scene = new THREE.Scene()
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
     this.materials = createMaterials(this.texelSize, this.fiberTexture)
+    this.lbmTargets = [this.targets.F0, this.targets.F1, this.targets.F2]
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.materials.zero)
     this.scene.add(this.quad)
@@ -99,22 +105,14 @@ export default class WatercolorSimulation {
     const { center, radius, flow, type, color } = brush
     const toolType = type === 'water' ? 0 : 1
 
-    const splatHeight = this.materials.splatHeight
-    splatHeight.uniforms.uSource.value = this.targets.H.read.texture
-    splatHeight.uniforms.uCenter.value.set(center[0], center[1])
-    splatHeight.uniforms.uRadius.value = radius
-    splatHeight.uniforms.uFlow.value = flow
-    splatHeight.uniforms.uToolType.value = toolType
-    this.renderToTarget(splatHeight, this.targets.H.write)
-    this.targets.H.swap()
-
-    const splatVelocity = this.materials.splatVelocity
-    splatVelocity.uniforms.uSource.value = this.targets.UV.read.texture
-    splatVelocity.uniforms.uCenter.value.set(center[0], center[1])
-    splatVelocity.uniforms.uRadius.value = radius
-    splatVelocity.uniforms.uFlow.value = flow
-    this.renderToTarget(splatVelocity, this.targets.UV.write)
-    this.targets.UV.swap()
+    this.runLbmTriplet(this.materials.lbmSplat, (material) => {
+      const uniforms = material.uniforms as Record<string, THREE.IUniform>
+      const centerUniform = uniforms.uCenter.value as THREE.Vector2
+      centerUniform.set(center[0], center[1])
+      uniforms.uRadius.value = radius
+      uniforms.uFlow.value = flow
+      uniforms.uToolType.value = toolType
+    })
 
 
     const splatPigment = this.materials.splatPigment
@@ -137,11 +135,13 @@ export default class WatercolorSimulation {
     this.renderToTarget(splatBinder, this.targets.B.write)
     this.targets.B.swap()
 
+    this.runLbmMacroscopic()
+
     const absorbReset = toolType === 0 ? 0.3 : 0.15
     this.absorbElapsed = Math.max(0, this.absorbElapsed - absorbReset * flow)
   }
 
-  // Run one simulation step using semi-Lagrangian advection and absorption.
+  // Run one simulation step using LBM dynamics and watercolor-specific processes.
   step(params: SimulationParams, dt = DEFAULT_DT) {
     const {
       grav,
@@ -175,33 +175,27 @@ export default class WatercolorSimulation {
       this.renderToTarget(advectBinder, this.targets.B.write)
       this.targets.B.swap()
 
-      const binderForces = this.materials.binderForces
-      binderForces.uniforms.uVelocity.value = this.targets.UV.read.texture
-      binderForces.uniforms.uBinder.value = this.targets.B.read.texture
-      binderForces.uniforms.uDt.value = substepDt
-      binderForces.uniforms.uElasticity.value = binder.elasticity
-      binderForces.uniforms.uViscosity.value = binder.viscosity
-      this.renderToTarget(binderForces, this.targets.UV.write)
-      this.targets.UV.swap()
+      const lbmForce = this.materials.lbmForce
+      lbmForce.uniforms.uHeight.value = this.targets.H.read.texture
+      lbmForce.uniforms.uBinder.value = this.targets.B.read.texture
+      lbmForce.uniforms.uVelocity.value = this.targets.UV.read.texture
+      lbmForce.uniforms.uGrav.value = grav
+      lbmForce.uniforms.uViscosity.value = visc
+      lbmForce.uniforms.uBinderElasticity.value = binder.elasticity
+      lbmForce.uniforms.uBinderViscosity.value = binder.viscosity
+      lbmForce.uniforms.uBinderBuoyancy.value = binder.buoyancy
+      this.renderToTarget(lbmForce, this.forceTarget)
 
-      const advectVel = this.materials.advectVelocity
-      advectVel.uniforms.uHeight.value = this.targets.H.read.texture
-      advectVel.uniforms.uVelocity.value = this.targets.UV.read.texture
-      advectVel.uniforms.uDt.value = substepDt
-      advectVel.uniforms.uGrav.value = grav
-      advectVel.uniforms.uVisc.value = visc
-      this.renderToTarget(advectVel, this.targets.UV.write)
-      this.targets.UV.swap()
-      this.projectVelocity()
+      this.runLbmTriplet(this.materials.lbmCollision, (material) => {
+        const uniforms = material.uniforms as Record<string, THREE.IUniform>
+        uniforms.uForce.value = this.forceTarget.texture
+        uniforms.uVisc.value = visc
+        uniforms.uDt.value = substepDt
+      })
 
-      const advectHeight = this.materials.advectHeight
-      advectHeight.uniforms.uHeight.value = this.targets.H.read.texture
-      advectHeight.uniforms.uVelocity.value = this.targets.UV.read.texture
-      advectHeight.uniforms.uBinder.value = this.targets.B.read.texture
-      advectHeight.uniforms.uBinderBuoyancy.value = binder.buoyancy
-      advectHeight.uniforms.uDt.value = substepDt
-      this.renderToTarget(advectHeight, this.targets.H.write)
-      this.targets.H.swap()
+      this.runLbmTriplet(this.materials.lbmStreaming)
+
+      this.runLbmMacroscopic()
 
       const advectPigment = this.materials.advectPigment
       advectPigment.uniforms.uPigment.value = this.targets.C.read.texture
@@ -323,6 +317,8 @@ export default class WatercolorSimulation {
       this.targets.S.swap()
 
       this.applyPaperDiffusion(substepDt, paperReplenish)
+      this.rescaleLbmDistributions()
+      this.runLbmMacroscopic()
       if (stateAbsorption) {
         this.absorbElapsed += substepDt
       } else {
@@ -345,30 +341,46 @@ export default class WatercolorSimulation {
     this.targets.W.swap()
   }
 
+  private runLbmTriplet(
+    triplet: MaterialTriplet,
+    assign?: (material: THREE.RawShaderMaterial, index: number) => void,
+  ) {
+    const f0 = this.targets.F0.read.texture
+    const f1 = this.targets.F1.read.texture
+    const f2 = this.targets.F2.read.texture
+    triplet.forEach((material, index) => {
+      const uniforms = material.uniforms as Record<string, THREE.IUniform>
+      uniforms.uF0.value = f0
+      uniforms.uF1.value = f1
+      uniforms.uF2.value = f2
+      if (assign) assign(material, index)
+      this.renderToTarget(material, this.lbmTargets[index].write)
+    })
+    this.lbmTargets.forEach((target) => target.swap())
+  }
 
-  // Enforce incompressibility by solving a pressure Poisson equation.
-  private projectVelocity() {
-    const divergence = this.materials.divergence
-    divergence.uniforms.uVelocity.value = this.targets.UV.read.texture
-    this.renderToTarget(divergence, this.divergence)
-
-    const zero = this.materials.zero
-    this.renderToTarget(zero, this.pressure.read)
-    this.renderToTarget(zero, this.pressure.write)
-
-    const jacobi = this.materials.jacobi
-    jacobi.uniforms.uDivergence.value = this.divergence.texture
-    for (let i = 0; i < this.pressureIterations; i += 1) {
-      jacobi.uniforms.uPressure.value = this.pressure.read.texture
-      this.renderToTarget(jacobi, this.pressure.write)
-      this.pressure.swap()
-    }
-
-    const project = this.materials.project
-    project.uniforms.uVelocity.value = this.targets.UV.read.texture
-    project.uniforms.uPressure.value = this.pressure.read.texture
-    this.renderToTarget(project, this.targets.UV.write)
+  private runLbmMacroscopic() {
+    const macroscopic = this.materials.lbmMacroscopic
+    macroscopic.uniforms.uF0.value = this.targets.F0.read.texture
+    macroscopic.uniforms.uF1.value = this.targets.F1.read.texture
+    macroscopic.uniforms.uF2.value = this.targets.F2.read.texture
+    this.renderToTarget(macroscopic, this.targets.UV.write)
     this.targets.UV.swap()
+
+    const density = this.materials.lbmDensity
+    density.uniforms.uState.value = this.targets.UV.read.texture
+    this.renderToTarget(density, this.targets.H.write)
+    this.targets.H.swap()
+  }
+
+  private rescaleLbmDistributions() {
+    const stateTexture = this.targets.UV.read.texture
+    const densityTexture = this.targets.H.read.texture
+    this.runLbmTriplet(this.materials.lbmMatch, (material) => {
+      const uniforms = material.uniforms as Record<string, THREE.IUniform>
+      uniforms.uState.value = stateTexture
+      uniforms.uNewDensity.value = densityTexture
+    })
   }
 
   // Clear all render targets so the canvas returns to a blank state.
@@ -380,8 +392,10 @@ export default class WatercolorSimulation {
     this.clearPingPong(this.targets.DEP)
     this.clearPingPong(this.targets.W)
     this.clearPingPong(this.targets.S)
-    this.clearPingPong(this.pressure)
-    this.renderToTarget(this.materials.zero, this.divergence)
+    this.clearPingPong(this.targets.F0)
+    this.clearPingPong(this.targets.F1)
+    this.clearPingPong(this.targets.F2)
+    this.renderToTarget(this.materials.zero, this.forceTarget)
     this.renderToTarget(this.materials.zero, this.compositeTarget)
     this.absorbElapsed = 0
   }
@@ -389,7 +403,13 @@ export default class WatercolorSimulation {
   // Release GPU allocations when the simulation is no longer needed.
   dispose() {
     this.quad.geometry.dispose()
-    Object.values(this.materials).forEach((mat) => mat.dispose())
+    Object.values(this.materials).forEach((value) => {
+      if (Array.isArray(value)) {
+        value.forEach((mat) => mat.dispose())
+      } else {
+        value.dispose()
+      }
+    })
     this.velocityMaxMaterial.dispose()
     this.clearTargets()
     this.fiberTexture.dispose()
@@ -412,9 +432,13 @@ export default class WatercolorSimulation {
     this.targets.W.write.dispose()
     this.targets.S.read.dispose()
     this.targets.S.write.dispose()
-    this.pressure.read.dispose()
-    this.pressure.write.dispose()
-    this.divergence.dispose()
+    this.targets.F0.read.dispose()
+    this.targets.F0.write.dispose()
+    this.targets.F1.read.dispose()
+    this.targets.F1.write.dispose()
+    this.targets.F2.read.dispose()
+    this.targets.F2.write.dispose()
+    this.forceTarget.dispose()
     this.compositeTarget.dispose()
   }
 

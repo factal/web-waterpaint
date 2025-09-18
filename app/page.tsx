@@ -14,7 +14,14 @@ import {
   type SimulationParams,
 } from '@/lib/watercolor/WatercolorSimulation'
 
-type Tool = 'water' | 'pigment0' | 'pigment1' | 'pigment2'
+type Tool =
+  | 'water'
+  | 'pigment0'
+  | 'pigment1'
+  | 'pigment2'
+  | 'spatter0'
+  | 'spatter1'
+  | 'spatter2'
 
 const SIM_SIZE = 512
 
@@ -130,7 +137,9 @@ const PIGMENT_SWATCH: Array<[number, number, number]> = [
 
 
 function toolToBrushType(tool: Tool): BrushType {
-  return tool === 'water' ? 'water' : 'pigment'
+  if (tool === 'water') return 'water'
+  if (tool.startsWith('spatter')) return 'spatter'
+  return 'pigment'
 }
 
 export default function Home() {
@@ -145,6 +154,9 @@ export default function Home() {
         'Pigment C': 'pigment0',
         'Pigment M': 'pigment1',
         'Pigment Y': 'pigment2',
+        'Spatter C': 'spatter0',
+        'Spatter M': 'spatter1',
+        'Spatter Y': 'spatter2',
       },
     },
     radius: { label: 'Radius', value: 18, min: 2, max: 60, step: 1 },
@@ -178,6 +190,16 @@ export default function Home() {
     pasteMode: { label: 'Enable Paste Mode', value: false },
     pasteBinderBoost: { label: 'Binder Boost', value: 4, min: 1, max: 12, step: 0.1 },
     pastePigmentBoost: { label: 'Pigment Boost', value: 2.5, min: 1, max: 10, step: 0.1 },
+  })
+  const spatterControls = useControls('Spatter', {
+    dropletCount: { label: 'Droplets', value: 18, min: 1, max: 64, step: 1 },
+    sprayRadius: { label: 'Spray Radius', value: 1.2, min: 0.1, max: 3, step: 0.05 },
+    spreadAngle: { label: 'Spread Angle', value: 220, min: 15, max: 360, step: 1 },
+    sizeMin: { label: 'Min Drop Size', value: 0.05, min: 0.01, max: 0.6, step: 0.01 },
+    sizeMax: { label: 'Max Drop Size', value: 0.22, min: 0.02, max: 0.8, step: 0.01 },
+    sizeBias: { label: 'Size Bias', value: 0.65, min: 0, max: 1, step: 0.01 },
+    radialBias: { label: 'Radial Bias', value: 0.55, min: 0, max: 1, step: 0.01 },
+    flowJitter: { label: 'Flow Jitter', value: 0.4, min: 0, max: 1, step: 0.01 },
   })
   const dryingControls = useControls('Drying & Deposits', {
     evap: { label: 'Evaporation', value: 0.02, min: 0, max: 1, step: 0.001 },
@@ -282,6 +304,25 @@ export default function Home() {
     pasteBinderBoost: number
     pastePigmentBoost: number
   }
+  const {
+    dropletCount: spatterDropletCount,
+    sprayRadius: spatterSprayRadius,
+    spreadAngle: spatterSpreadAngle,
+    sizeMin: spatterSizeMin,
+    sizeMax: spatterSizeMax,
+    sizeBias: spatterSizeBias,
+    radialBias: spatterRadialBias,
+    flowJitter: spatterFlowJitter,
+  } = spatterControls as {
+    dropletCount: number
+    sprayRadius: number
+    spreadAngle: number
+    sizeMin: number
+    sizeMax: number
+    sizeBias: number
+    radialBias: number
+    flowJitter: number
+  }
   const { stateAbsorption, granulation, paperTextureStrength } = featureControls as {
     stateAbsorption: boolean
     granulation: boolean
@@ -308,22 +349,56 @@ export default function Home() {
   const activeMask = maskAssets[maskId] ?? maskAssets.round
 
   const brush = useMemo<ViewportBrush>(
-    () => ({
-      radius,
-      flow,
-      type: toolToBrushType(tool),
-      color: pigmentIndex >= 0 ? PIGMENT_MASS[pigmentIndex] : ([0, 0, 0] as [number, number, number]),
-      pasteMode,
-      binderBoost: pasteBinderBoost,
-      pigmentBoost: pastePigmentBoost,
-      mask: {
-        texture: activeMask.texture,
-        scale: activeMask.scale,
-        strength: Math.min(1, maskStrength * activeMask.baseStrength),
-        pressureScale: activeMask.pressureScale,
-        rotationJitter: activeMask.rotationJitter,
-      },
-    }),
+    () => {
+      const brushType = toolToBrushType(tool)
+      const color =
+        pigmentIndex >= 0
+          ? (PIGMENT_MASS[pigmentIndex] as [number, number, number])
+          : ([0, 0, 0] as [number, number, number])
+      const minSize = Math.max(0.01, Math.min(spatterSizeMin, spatterSizeMax))
+      const maxSize = Math.max(minSize + 1e-4, Math.max(spatterSizeMin, spatterSizeMax))
+      const spread = Math.min(Math.max(spatterSpreadAngle, 0), 360)
+      const spray = Math.max(spatterSprayRadius, 0)
+      const sizeBias = Math.min(Math.max(spatterSizeBias, 0), 1)
+      const radialBias = Math.min(Math.max(spatterRadialBias, 0), 1)
+      const flowJitter = Math.min(Math.max(spatterFlowJitter, 0), 1)
+      const dropletCount = Math.max(1, Math.round(spatterDropletCount))
+      const maskStrengthValue =
+        brushType === 'spatter'
+          ? 0
+          : Math.min(1, maskStrength * activeMask.baseStrength)
+      const pasteActive = brushType === 'pigment' && pasteMode
+
+      return {
+        radius,
+        flow,
+        type: brushType,
+        color,
+        pasteMode: pasteActive,
+        binderBoost: pasteBinderBoost,
+        pigmentBoost: pastePigmentBoost,
+        mask: {
+          texture: activeMask.texture,
+          scale: activeMask.scale,
+          strength: maskStrengthValue,
+          pressureScale: activeMask.pressureScale,
+          rotationJitter: activeMask.rotationJitter,
+        },
+        spatter:
+          brushType === 'spatter'
+            ? {
+                dropletCount,
+                sprayRadius: spray,
+                spreadAngle: spread,
+                minSize,
+                maxSize,
+                sizeBias,
+                radialBias,
+                flowJitter,
+              }
+            : undefined,
+      }
+    },
     [
       radius,
       flow,
@@ -334,6 +409,14 @@ export default function Home() {
       pastePigmentBoost,
       activeMask,
       maskStrength,
+      spatterDropletCount,
+      spatterSprayRadius,
+      spatterSpreadAngle,
+      spatterSizeMin,
+      spatterSizeMax,
+      spatterSizeBias,
+      spatterRadialBias,
+      spatterFlowJitter,
     ],
   )
 
@@ -410,7 +493,7 @@ export default function Home() {
           <div className='pointer-events-none absolute bottom-4 left-4 text-[10px] uppercase tracking-wide text-slate-400 sm:text-xs'>
             Resolution {SIM_SIZE}x{SIM_SIZE}
           </div>
-          {brush.type === 'pigment' && pigmentIndex >= 0 && (
+          {brush.type !== 'water' && pigmentIndex >= 0 && (
             <div className='pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/80 px-3 py-1 text-xs text-slate-200 shadow-lg sm:text-sm'>
               <span
                 className='inline-flex h-3 w-3 rounded-full border border-white/40 sm:h-4 sm:w-4'
@@ -418,7 +501,13 @@ export default function Home() {
                   background: `rgb(${PIGMENT_SWATCH[pigmentIndex][0] * 255}, ${PIGMENT_SWATCH[pigmentIndex][1] * 255}, ${PIGMENT_SWATCH[pigmentIndex][2] * 255})`,
                 }}
               />
-              <span>{pasteMode ? 'Paste mode' : 'Pigment active'}</span>
+              <span>
+                {brush.type === 'spatter'
+                  ? 'Spatter mode'
+                  : brush.pasteMode
+                    ? 'Paste mode'
+                    : 'Pigment active'}
+              </span>
             </div>
           )}
         </div>

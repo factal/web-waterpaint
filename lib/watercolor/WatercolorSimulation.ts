@@ -176,6 +176,7 @@ export default class WatercolorSimulation {
       edge,
       stateAbsorption,
       granulation,
+      paperTextureStrength,
       backrunStrength,
       absorbExponent,
       absorbTimeOffset,
@@ -270,6 +271,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbDeposit, this.targets.DEP.write)
 
@@ -287,6 +289,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbHeight, this.targets.H.write)
 
@@ -304,6 +307,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbPigment, this.targets.C.write)
 
@@ -321,6 +325,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbWet, this.targets.W.write)
 
@@ -338,6 +343,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbSettled, this.targets.S.write)
 
@@ -477,6 +483,7 @@ export default class WatercolorSimulation {
     absorbTime: number,
     timeOffset: number,
     absorbFloor: number,
+    paperTextureStrength: number,
   ) {
     const uniforms = material.uniforms as Record<string, THREE.IUniform>
     uniforms.uHeight.value = this.targets.H.read.texture
@@ -496,6 +503,7 @@ export default class WatercolorSimulation {
     if (uniforms.uAbsorbTime) uniforms.uAbsorbTime.value = absorbTime
     if (uniforms.uAbsorbTimeOffset) uniforms.uAbsorbTimeOffset.value = timeOffset
     if (uniforms.uAbsorbFloor) uniforms.uAbsorbFloor.value = absorbFloor
+    if (uniforms.uPaperHeightStrength) uniforms.uPaperHeightStrength.value = paperTextureStrength
   }
 
   private createVelocityReductionTargets(size: number): THREE.WebGLRenderTarget[] {
@@ -574,4 +582,5 @@ export {
   DEFAULT_ABSORB_EXPONENT,
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_ABSORB_MIN_FLUX,
+  DEFAULT_PAPER_TEXTURE_STRENGTH,
 } from './constants'

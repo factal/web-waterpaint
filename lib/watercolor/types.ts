@@ -38,6 +38,7 @@ export interface SimulationParams {
   edge: number
   stateAbsorption: boolean
   granulation: boolean
+  paperTextureStrength: number
   backrunStrength: number
   absorbExponent: number
   absorbTimeOffset: number

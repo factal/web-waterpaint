@@ -169,6 +169,7 @@ export function createMaterials(
     uWet: { value: null },
     uDeposits: { value: null },
     uSettled: { value: null },
+    uPaperHeight: { value: paperHeightTexture },
     uAbsorb: { value: 0 },
     uEvap: { value: 0 },
     uEdge: { value: 0 },
@@ -181,6 +182,7 @@ export function createMaterials(
     uSettle: { value: 0 },
     uGranStrength: { value: GRANULATION_STRENGTH },
     uBackrunStrength: { value: 0 },
+    uPaperHeightStrength: { value: 0 },
     uTexel: { value: texelSize.clone() },
   })
 

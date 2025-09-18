@@ -8,6 +8,7 @@ import {
   DEFAULT_ABSORB_MIN_FLUX,
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_BINDER_PARAMS,
+  DEFAULT_PAPER_TEXTURE_STRENGTH,
   type BrushType,
   type SimulationParams,
 } from '@/lib/watercolor/WatercolorSimulation'
@@ -122,6 +123,13 @@ export default function Home() {
   const featureControls = useControls('Features', {
     stateAbsorption: { label: 'State Absorption', value: true },
     granulation: { label: 'Granulation', value: true },
+    paperTextureStrength: {
+      label: 'Paper Texture Influence',
+      value: DEFAULT_PAPER_TEXTURE_STRENGTH,
+      min: 0,
+      max: 2,
+      step: 0.01,
+    },
   })
 
   useControls('Actions', {
@@ -148,7 +156,11 @@ export default function Home() {
     viscosity: number
     buoyancy: number
   }
-  const { stateAbsorption, granulation } = featureControls as { stateAbsorption: boolean; granulation: boolean }
+  const { stateAbsorption, granulation, paperTextureStrength } = featureControls as {
+    stateAbsorption: boolean
+    granulation: boolean
+    paperTextureStrength: number
+  }
   const { waterCapacityWater, waterCapacityPigment, pigmentCapacity, waterConsumption, pigmentConsumption, stampSpacing } = reservoirControls as {
     waterCapacityWater: number;
     waterCapacityPigment: number;
@@ -176,6 +188,7 @@ export default function Home() {
     backrunStrength,
     stateAbsorption,
     granulation,
+    paperTextureStrength,
     absorbExponent: DEFAULT_ABSORB_EXPONENT,
     absorbTimeOffset: DEFAULT_ABSORB_TIME_OFFSET,
     absorbMinFlux: DEFAULT_ABSORB_MIN_FLUX,
@@ -206,6 +219,7 @@ export default function Home() {
     backrunStrength,
     stateAbsorption,
     granulation,
+    paperTextureStrength,
     cfl,
     maxSubsteps,
     binderInjection,

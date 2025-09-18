@@ -12,6 +12,13 @@ export interface BrushSettings {
   dryThreshold?: number
 }
 
+export type ChannelCoefficients = [number, number, number]
+
+export interface PigmentCoefficients {
+  diffusion: ChannelCoefficients
+  settle: ChannelCoefficients
+}
+
 export interface BinderParams {
   injection: number
   diffusion: number
@@ -47,6 +54,7 @@ export interface SimulationParams {
   maxSubsteps: number
   binder: BinderParams
   reservoir: ReservoirParams
+  pigmentCoefficients?: PigmentCoefficients
 }
 
 type SwapTarget = {

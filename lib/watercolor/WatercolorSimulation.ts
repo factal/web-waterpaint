@@ -184,12 +184,25 @@ export default class WatercolorSimulation {
       cfl,
       maxSubsteps,
       binder,
+      pigmentCoefficients,
     } = params
 
     this.binderSettings = { ...binder }
 
     const substeps = this.determineSubsteps(cfl, maxSubsteps, dt)
     const substepDt = dt / substeps
+
+    const diffusionCoefficients = new THREE.Vector3(
+      pigmentCoefficients?.diffusion?.[0] ?? PIGMENT_DIFFUSION_COEFF,
+      pigmentCoefficients?.diffusion?.[1] ?? PIGMENT_DIFFUSION_COEFF,
+      pigmentCoefficients?.diffusion?.[2] ?? PIGMENT_DIFFUSION_COEFF,
+    )
+    const settleCoefficients = new THREE.Vector3(
+      pigmentCoefficients?.settle?.[0] ?? GRANULATION_SETTLE_RATE,
+      pigmentCoefficients?.settle?.[1] ?? GRANULATION_SETTLE_RATE,
+      pigmentCoefficients?.settle?.[2] ?? GRANULATION_SETTLE_RATE,
+    )
+    const settleVector = new THREE.Vector3()
 
     for (let i = 0; i < substeps; i += 1) {
       const advectBinder = this.materials.advectBinder
@@ -238,7 +251,9 @@ export default class WatercolorSimulation {
 
       const diffusePigment = this.materials.diffusePigment
       diffusePigment.uniforms.uPigment.value = this.targets.C.read.texture
-      diffusePigment.uniforms.uDiffusion.value = PIGMENT_DIFFUSION_COEFF
+      const diffusionUniform =
+        diffusePigment.uniforms.uDiffusion.value as THREE.Vector3
+      diffusionUniform.copy(diffusionCoefficients)
       diffusePigment.uniforms.uDt.value = substepDt
       this.renderToTarget(diffusePigment, this.targets.C.write)
       this.targets.C.swap()
@@ -248,9 +263,12 @@ export default class WatercolorSimulation {
       const edgeFactor = edge * substepDt
       const beta = stateAbsorption ? absorbExponent : 1.0
       const humidityInfluence = stateAbsorption ? HUMIDITY_INFLUENCE : 0.0
-      const settleBase = granulation ? GRANULATION_SETTLE_RATE : 0.0
       const granStrength = granulation ? GRANULATION_STRENGTH : 0.0
-      const settleFactor = settleBase * substepDt
+      if (granulation) {
+        settleVector.copy(settleCoefficients).multiplyScalar(substepDt)
+      } else {
+        settleVector.set(0, 0, 0)
+      }
       const timeOffset = stateAbsorption ? Math.max(absorbTimeOffset, 1e-4) : 1.0
       const absorbTime = stateAbsorption ? this.absorbElapsed + 0.5 * substepDt : 0
       const absorbFloor = stateAbsorption ? Math.max(absorbMinFlux, 0) * substepDt : 0
@@ -263,7 +281,7 @@ export default class WatercolorSimulation {
         absorbBase,
         evapFactor,
         edgeFactor,
-        settleFactor,
+        settleVector,
         beta,
         humidityInfluence,
         granStrength,
@@ -281,7 +299,7 @@ export default class WatercolorSimulation {
         absorbBase,
         evapFactor,
         edgeFactor,
-        settleFactor,
+        settleVector,
         beta,
         humidityInfluence,
         granStrength,
@@ -299,7 +317,7 @@ export default class WatercolorSimulation {
         absorbBase,
         evapFactor,
         edgeFactor,
-        settleFactor,
+        settleVector,
         beta,
         humidityInfluence,
         granStrength,
@@ -317,7 +335,7 @@ export default class WatercolorSimulation {
         absorbBase,
         evapFactor,
         edgeFactor,
-        settleFactor,
+        settleVector,
         beta,
         humidityInfluence,
         granStrength,
@@ -335,7 +353,7 @@ export default class WatercolorSimulation {
         absorbBase,
         evapFactor,
         edgeFactor,
-        settleFactor,
+        settleVector,
         beta,
         humidityInfluence,
         granStrength,
@@ -475,7 +493,7 @@ export default class WatercolorSimulation {
     absorb: number,
     evap: number,
     edge: number,
-    settle: number,
+    settle: THREE.Vector3,
     beta: number,
     humidity: number,
     granStrength: number,
@@ -497,7 +515,10 @@ export default class WatercolorSimulation {
     uniforms.uDepBase.value = DEPOSITION_BASE
     if (uniforms.uBeta) uniforms.uBeta.value = beta
     if (uniforms.uHumidity) uniforms.uHumidity.value = humidity
-    if (uniforms.uSettle) uniforms.uSettle.value = settle
+    if (uniforms.uSettle) {
+      const settleUniform = uniforms.uSettle.value as THREE.Vector3
+      settleUniform.copy(settle)
+    }
     if (uniforms.uGranStrength) uniforms.uGranStrength.value = granStrength
     if (uniforms.uBackrunStrength) uniforms.uBackrunStrength.value = backrunStrength
     if (uniforms.uAbsorbTime) uniforms.uAbsorbTime.value = absorbTime
@@ -576,7 +597,14 @@ export default class WatercolorSimulation {
   }
 }
 
-export type { BrushType, BrushSettings, SimulationParams, BinderParams } from './types'
+export type {
+  BrushType,
+  BrushSettings,
+  SimulationParams,
+  BinderParams,
+  PigmentCoefficients,
+  ChannelCoefficients,
+} from './types'
 export {
   DEFAULT_BINDER_PARAMS,
   DEFAULT_ABSORB_EXPONENT,

@@ -164,7 +164,7 @@ in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uPigment;
 uniform vec2 uTexel;
-uniform float uDiffusion;
+uniform vec3 uDiffusion;
 uniform float uDt;
 
 vec3 sampleRGB(vec2 uv) {
@@ -180,7 +180,7 @@ void main() {
   vec3 bottom = sampleRGB(vUv - dv);
   vec3 top = sampleRGB(vUv + dv);
   vec3 laplacian = left + right + top + bottom - 4.0 * center.rgb;
-  vec3 diffused = center.rgb + uDiffusion * laplacian * uDt;
+  vec3 diffused = center.rgb + (uDiffusion * laplacian) * uDt;
   fragColor = vec4(max(diffused, vec3(0.0)), center.a);
 }
 `
@@ -265,7 +265,7 @@ uniform float uAbsorbTime;
 uniform float uAbsorbTimeOffset;
 uniform float uAbsorbFloor;
 uniform float uHumidity;
-uniform float uSettle;
+uniform vec3 uSettle;
 uniform float uGranStrength;
 uniform float uBackrunStrength;
 uniform float uPaperHeightStrength;

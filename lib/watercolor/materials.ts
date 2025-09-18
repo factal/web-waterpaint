@@ -141,7 +141,13 @@ export function createMaterials(
   const diffusePigment = createMaterial(PIGMENT_DIFFUSION_FRAGMENT, {
     uPigment: { value: null },
     uTexel: { value: texelSize.clone() },
-    uDiffusion: { value: PIGMENT_DIFFUSION_COEFF },
+    uDiffusion: {
+      value: new THREE.Vector3(
+        PIGMENT_DIFFUSION_COEFF,
+        PIGMENT_DIFFUSION_COEFF,
+        PIGMENT_DIFFUSION_COEFF,
+      ),
+    },
     uDt: { value: DEFAULT_DT },
   })
 
@@ -179,7 +185,7 @@ export function createMaterials(
     uAbsorbTimeOffset: { value: DEFAULT_ABSORB_TIME_OFFSET },
     uAbsorbFloor: { value: DEFAULT_ABSORB_MIN_FLUX },
     uHumidity: { value: HUMIDITY_INFLUENCE },
-    uSettle: { value: 0 },
+    uSettle: { value: new THREE.Vector3(0, 0, 0) },
     uGranStrength: { value: GRANULATION_STRENGTH },
     uBackrunStrength: { value: 0 },
     uPaperHeightStrength: { value: 0 },

@@ -265,7 +265,7 @@ uniform float uAbsorbTime;
 uniform float uAbsorbTimeOffset;
 uniform float uAbsorbFloor;
 uniform float uHumidity;
-uniform vec3 uSettle;
+uniform float uSettle;
 uniform float uGranStrength;
 uniform float uBackrunStrength;
 uniform float uPaperHeightStrength;

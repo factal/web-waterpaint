@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-import { type BinderParams, type SurfaceTensionParams } from './types'
+import { type BinderParams, type CapillaryFringeParams, type SurfaceTensionParams } from './types'
 
 export const DEFAULT_DT = 1 / 90
 export const DEPOSITION_BASE = 0.02
@@ -50,4 +50,11 @@ export const DEFAULT_SURFACE_TENSION_PARAMS: SurfaceTensionParams = {
   breakThreshold: 0.025,
   snapStrength: 0.6,
   velocityLimit: 0.65,
+}
+
+export const DEFAULT_FRINGE_PARAMS: CapillaryFringeParams = {
+  enabled: true,
+  strength: 0.65,
+  threshold: 0.18,
+  noiseScale: 32,
 }

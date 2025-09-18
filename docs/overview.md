@@ -31,7 +31,7 @@ All simulation textures use half floats so they remain filterable on WebGL2.
 5. **Fluid transport** – Semi-Lagrangian advection updates velocity (with slope-driven gravity), water height (including binder buoyancy), and dissolved pigment.
 6. **Pigment diffusion** – A dedicated Fickian diffusion pass integrates `∂C/∂t = D∇²C`, ensuring pigment blurs even in stagnant water. The coefficient is exposed through the simulation constants.
 7. **Absorption, evaporation, and granulation** – The absorb suite reads the current state and returns updated `H`, `C`, `DEP`, `W`, and `S`. Lucas–Washburn dynamics drive absorption using `A = A₀·(1 - w)^{β}` with `β = 0.5` and a temporal decay term `1 / √(t + t₀)`. Edge gradients add blooms, pigment settling feeds the granulation buffer, and paper-height-dependent weighting biases deposition toward microscopic valleys to reproduce fine grain.
-8. **Paper diffusion** – Moisture diffuses anisotropically along a procedural fibre field, keeping wet edges alive and replenishing drier paper with a portion of the absorbed water.
+8. **Paper diffusion** – Moisture diffuses anisotropically along a procedural fibre field. The shader identifies wet fronts, injects fibre-aligned high-frequency noise, and feathers isolated droplets so edges stay lively while drier paper receives a portion of the absorbed water.
 9. **Kubelka–Munk composite** – Deposited pigment is converted into optical coefficients and shaded against the paper colour with a finite-thickness KM approximation.
 
 Between the splat and transport phases, the simulation optionally performs a **rewetting** micro-pass. Whenever a new splat adds
@@ -63,6 +63,12 @@ Artist-facing controls map to `SimulationParams.surfaceTension`:
 - `velocityLimit` gates the effect to slow-moving water so energetic splashes are left untouched.
 
 Defaults for the block live in `DEFAULT_SURFACE_TENSION_PARAMS`.
+
+## Capillary Fringe Feathering
+
+Paper moisture now carries an explicit fringe model layered on top of the base diffusion. The updated `PAPER_DIFFUSION_FRAGMENT` samples the fibre texture to build a tangent frame, measures wetness gradients, and treats steep transitions as active wet fronts. A fibre-aligned noise field perturbs the parallel diffusion coefficient while damping the perpendicular component, allowing the striations in the paper to steer feathered blooms. The same directional noise drives a stochastic culling pass that occasionally zeroes out thin, isolated cells so drying pools break into ragged filaments instead of uniform bands. The result is a capillary fringe that clings to the fibre direction and naturally dissolves as the sheet dries.
+
+Uniforms `uFringeStrength`, `uFringeThreshold`, and `uFringeNoiseScale` control the behaviour and are populated from `SimulationParams.capillaryFringe`. Default values live in `DEFAULT_FRINGE_PARAMS`, keeping the effect active but gentle out of the box.
 
 ## Pigment Diffusion
 
@@ -132,6 +138,7 @@ Leva panels in the demo map directly to `SimulationParams` fields:
 - **Flow Dynamics** – Gravity, viscosity, CFL safety factor, and maximum adaptive substeps.
 - **Binder** – Runtime overrides for binder injection, diffusion, decay, elasticity, viscosity, and buoyancy.
 - **Surface Tension** – Enable/disable the filament relaxation pass and tune strength, neighbour thresholding, snapping, and the velocity gate.
+- **Capillary Fringe** – Toggle the fringe-aware diffusion pass and tune strength, wet-front thresholding, and the fibre-aligned noise scale that carves feathered edges.
 - **Brush Reservoir** – Water/pigment capacities and per-stamp consumption rates.
 - **Pigment Separation** – RGB diffusion/settling overrides and per-pigment presets.
 - **Simulation Features** – Toggles for state-dependent absorption, paper-texture-driven granulation, and rewetting behaviour.

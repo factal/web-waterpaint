@@ -11,10 +11,12 @@ import {
   HUMIDITY_INFLUENCE,
   PIGMENT_DIFFUSION_COEFF,
   DEFAULT_SURFACE_TENSION_PARAMS,
+  DEFAULT_FRINGE_PARAMS,
 } from './constants'
 import {
   type BinderParams,
   type BrushSettings,
+  type CapillaryFringeParams,
   type MaterialMap,
   type PingPongTarget,
   type SimulationParams,
@@ -283,6 +285,7 @@ export default class WatercolorSimulation {
       maxSubsteps,
       binder,
       surfaceTension,
+      capillaryFringe,
       pigmentCoefficients,
     } = params
 
@@ -294,6 +297,11 @@ export default class WatercolorSimulation {
     const surfaceParams = {
       ...DEFAULT_SURFACE_TENSION_PARAMS,
       ...surfaceTension,
+    }
+
+    const fringeParams: CapillaryFringeParams = {
+      ...DEFAULT_FRINGE_PARAMS,
+      ...capillaryFringe,
     }
 
     const diffusionCoefficients = new THREE.Vector3(
@@ -493,7 +501,7 @@ export default class WatercolorSimulation {
       this.targets.W.swap()
       this.targets.S.swap()
 
-      this.applyPaperDiffusion(substepDt, paperReplenish)
+      this.applyPaperDiffusion(substepDt, paperReplenish, fringeParams)
       if (stateAbsorption) {
         this.absorbElapsed += substepDt
       } else {
@@ -507,11 +515,14 @@ export default class WatercolorSimulation {
   }
 
   // Diffuse moisture along the paper fiber field to keep edges alive.
-  private applyPaperDiffusion(dt: number, replenish: number) {
+  private applyPaperDiffusion(dt: number, replenish: number, fringe: CapillaryFringeParams) {
     const diffuse = this.materials.diffuseWet
     diffuse.uniforms.uWet.value = this.targets.W.read.texture
     diffuse.uniforms.uDt.value = dt
     diffuse.uniforms.uReplenish.value = replenish
+    diffuse.uniforms.uFringeStrength.value = fringe.enabled ? fringe.strength : 0
+    diffuse.uniforms.uFringeThreshold.value = Math.max(fringe.threshold, 1e-4)
+    diffuse.uniforms.uFringeNoiseScale.value = Math.max(fringe.noiseScale, 0)
     this.renderToTarget(diffuse, this.targets.W.write)
     this.targets.W.swap()
   }
@@ -749,6 +760,7 @@ export type {
   PigmentCoefficients,
   ChannelCoefficients,
   SurfaceTensionParams,
+  CapillaryFringeParams,
 } from './types'
 export {
   DEFAULT_BINDER_PARAMS,
@@ -759,4 +771,5 @@ export {
   PIGMENT_REWET,
   DEFAULT_PAPER_TEXTURE_STRENGTH,
   DEFAULT_SURFACE_TENSION_PARAMS,
+  DEFAULT_FRINGE_PARAMS,
 } from './constants'

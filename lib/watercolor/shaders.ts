@@ -610,6 +610,26 @@ uniform vec2 uTexel;
 uniform float uDt;
 uniform float uReplenish;
 uniform float uStrength;
+uniform float uFringeStrength;
+uniform float uFringeThreshold;
+uniform float uFringeNoiseScale;
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float fiberNoise(vec2 uv, vec2 dir, float scale) {
+  float s = max(scale, 1.0);
+  vec2 perp = vec2(-dir.y, dir.x);
+  float along = dot(uv, dir) * s;
+  float across = dot(uv, perp) * s * 0.75;
+  float stripe = sin(along * 6.28318 + across * 1.7);
+  float ripple = sin((along * 0.5 + across * 1.3) * 6.28318 + hash(vec2(along, across)) * 6.28318);
+  float jitter = hash(vec2(along * 1.9, across * 2.3)) - 0.5;
+  float noise = 0.5 + 0.35 * stripe + 0.25 * ripple + jitter * 0.3;
+  return clamp(noise, 0.0, 1.0);
+}
+
 void main() {
   vec4 fiber = texture(uFiber, vUv);
   vec2 dir = fiber.xy;
@@ -618,8 +638,8 @@ void main() {
   } else {
     dir = normalize(dir);
   }
-  vec2 dirTex = dir * uTexel;
   vec2 perp = vec2(-dir.y, dir.x);
+  vec2 dirTex = dir * uTexel;
   vec2 perpTex = perp * uTexel;
 
   float w = texture(uWet, vUv).r;
@@ -628,12 +648,49 @@ void main() {
   float wPerpPlus = texture(uWet, vUv + perpTex).r;
   float wPerpMinus = texture(uWet, vUv - perpTex).r;
 
+  float lapPara = wParaPlus - 2.0 * w + wParaMinus;
+  float lapPerp = wPerpPlus - 2.0 * w + wPerpMinus;
+
+  float gradient = length(vec2(wParaPlus - wParaMinus, wPerpPlus - wPerpMinus)) * 0.5;
+  float contrast = max(
+    max(abs(w - wParaPlus), abs(w - wParaMinus)),
+    max(abs(w - wPerpPlus), abs(w - wPerpMinus))
+  );
+  float edge = max(gradient, contrast);
+  float frontMask = smoothstep(uFringeThreshold * 0.25, uFringeThreshold, edge);
+  float moistureWindow = smoothstep(0.02, 0.45, w) * (1.0 - smoothstep(0.6, 0.95, w));
+  frontMask *= moistureWindow;
+
+  float freq = max(uFringeNoiseScale, 1.0);
+  float noise = fiberNoise(vUv + fiber.xy, dir, freq);
+  float signedNoise = noise * 2.0 - 1.0;
+  float fringeIntensity = clamp(uFringeStrength * frontMask, 0.0, 2.0);
+
   float dPara = fiber.z;
   float dPerp = fiber.w;
-  float lap = dPara * (wParaPlus - 2.0 * w + wParaMinus) + dPerp * (wPerpPlus - 2.0 * w + wPerpMinus);
+  float paraMod = 1.0 + fringeIntensity * (0.45 + 0.55 * signedNoise);
+  float perpMod = 1.0 - fringeIntensity * (0.35 + 0.45 * signedNoise);
+  dPara = max(0.0, dPara * paraMod);
+  dPerp = max(0.0, dPerp * perpMod);
+
+  float lap = dPara * lapPara + dPerp * lapPerp;
+  float neighborAvg = (wParaPlus + wParaMinus + wPerpPlus + wPerpMinus) * 0.25;
+  float noiseKick = (neighborAvg - w) * signedNoise * fringeIntensity * 0.35;
+  lap += noiseKick;
+
   float diffusion = uStrength * lap;
   float replenish = uReplenish * (1.0 - w);
-  float newW = clamp(w + uDt * (diffusion + replenish), 0.0, 1.0);
+  float newW = w + uDt * (diffusion + replenish);
+
+  float thin = 1.0 - smoothstep(0.0, uFringeThreshold, w);
+  float neighborMax = max(max(wParaPlus, wParaMinus), max(wPerpPlus, wPerpMinus));
+  float isolation = 1.0 - smoothstep(uFringeThreshold * 0.5, uFringeThreshold, neighborMax);
+  float dropProb = clamp(fringeIntensity * thin * isolation * 0.85, 0.0, 1.0);
+  float random = hash(vUv * (freq * 1.37 + 3.1) + fiber.xy);
+  float drop = step(random, dropProb);
+  newW = mix(newW, 0.0, drop);
+
+  newW = clamp(newW, 0.0, 1.0);
   fragColor = vec4(newW, 0.0, 0.0, 1.0);
 }
 `

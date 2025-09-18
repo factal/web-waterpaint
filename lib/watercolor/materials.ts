@@ -38,6 +38,7 @@ import {
   DEFAULT_REWET_STRENGTH,
   DEFAULT_DT,
   DEPOSITION_BASE,
+  DEFAULT_FRINGE_PARAMS,
   GRANULATION_STRENGTH,
   HUMIDITY_INFLUENCE,
   KM_LAYER_SCALE,
@@ -48,7 +49,7 @@ import {
   PIGMENT_REWET,
   PIGMENT_S,
 } from './constants'
-import { type MaterialMap } from './types'
+import { type DiffuseWetMaterial, type MaterialMap } from './types'
 
 const sanitizeShader = (code: string) => code.trimStart()
 
@@ -290,7 +291,10 @@ export function createMaterials(
     uDt: { value: DEFAULT_DT },
     uReplenish: { value: 0 },
     uStrength: { value: PAPER_DIFFUSION_STRENGTH },
-  })
+    uFringeStrength: { value: DEFAULT_FRINGE_PARAMS.strength },
+    uFringeThreshold: { value: DEFAULT_FRINGE_PARAMS.threshold },
+    uFringeNoiseScale: { value: DEFAULT_FRINGE_PARAMS.noiseScale },
+  }) as DiffuseWetMaterial
 
   const divergence = createMaterial(PRESSURE_DIVERGENCE_FRAGMENT, {
     uVelocity: { value: null },

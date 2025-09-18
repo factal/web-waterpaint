@@ -28,10 +28,31 @@ uniform float uFlow;
 uniform sampler2D uPaperHeight;
 uniform float uDryThreshold;
 uniform float uDryInfluence;
+uniform sampler2D uBristleMask;
+uniform vec2 uMaskScale;
+uniform float uMaskRotation;
+uniform float uMaskStrength;
+mat2 maskRotationMatrix(float angle) {
+  float s = sin(angle);
+  float c = cos(angle);
+  return mat2(c, -s, s, c);
+}
+float sampleBrushMask(vec2 uv, float radius) {
+  float r = max(radius, 1e-6);
+  vec2 local = (uv - uCenter) / r;
+  vec2 rotated = maskRotationMatrix(uMaskRotation) * local;
+  vec2 scaled = rotated * uMaskScale;
+  vec2 maskUv = scaled * 0.5 + vec2(0.5);
+  float mask = texture(uBristleMask, maskUv).r;
+  float influence = clamp(uMaskStrength, 0.0, 1.0);
+  return mix(1.0, mask, influence);
+}
 float splatFalloff(vec2 uv, float radius) {
   vec2 delta = uv - uCenter;
   float r = max(radius, 1e-6);
-  return exp(-9.0 * dot(delta, delta) / (r * r + 1e-6));
+  float gaussian = exp(-9.0 * dot(delta, delta) / (r * r + 1e-6));
+  float mask = sampleBrushMask(uv, radius);
+  return gaussian * mask;
 }
 float paperDryGate(vec2 uv, float flow) {
   float height = texture(uPaperHeight, uv).r;

@@ -70,8 +70,22 @@ export function createMaterials(
   fiberTexture: THREE.DataTexture,
   paperHeightTexture: THREE.DataTexture,
 ): MaterialMap {
+  const defaultMaskData = new Uint8Array([255, 255, 255, 255])
+  const defaultMask = new THREE.DataTexture(defaultMaskData, 1, 1, THREE.RGBAFormat)
+  defaultMask.needsUpdate = true
+  defaultMask.wrapS = THREE.ClampToEdgeWrapping
+  defaultMask.wrapT = THREE.ClampToEdgeWrapping
+  defaultMask.magFilter = THREE.LinearFilter
+  defaultMask.minFilter = THREE.LinearFilter
+
   const centerUniform = () => ({ value: new THREE.Vector2(0, 0) })
   const pigmentUniform = () => ({ value: new THREE.Vector3(0, 0, 0) })
+  const maskUniforms = () => ({
+    uBristleMask: { value: defaultMask },
+    uMaskScale: { value: new THREE.Vector2(1, 1) },
+    uMaskRotation: { value: 0 },
+    uMaskStrength: { value: 0 },
+  })
 
   const zero = createMaterial(ZERO_FRAGMENT, {})
 
@@ -84,6 +98,7 @@ export function createMaterials(
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    ...maskUniforms(),
   })
 
   const splatVelocity = createMaterial(SPLAT_VELOCITY_FRAGMENT, {
@@ -94,6 +109,7 @@ export function createMaterials(
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    ...maskUniforms(),
   })
 
   const splatPigment = createMaterial(SPLAT_PIGMENT_FRAGMENT, {
@@ -108,6 +124,7 @@ export function createMaterials(
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    ...maskUniforms(),
   })
 
   const splatBinder = createMaterial(SPLAT_BINDER_FRAGMENT, {
@@ -121,6 +138,7 @@ export function createMaterials(
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    ...maskUniforms(),
   })
 
   const splatDeposit = createMaterial(SPLAT_DEPOSIT_FRAGMENT, {
@@ -134,6 +152,7 @@ export function createMaterials(
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    ...maskUniforms(),
   })
 
   const splatRewetPigment = createMaterial(SPLAT_REWET_PIGMENT_FRAGMENT, {
@@ -144,6 +163,10 @@ export function createMaterials(
     uFlow: { value: 0 },
     uRewetStrength: { value: DEFAULT_REWET_STRENGTH },
     uRewetPerChannel: { value: PIGMENT_REWET.clone() },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
+    ...maskUniforms(),
   })
 
   const splatRewetDeposit = createMaterial(SPLAT_REWET_DEPOSIT_FRAGMENT, {
@@ -153,6 +176,10 @@ export function createMaterials(
     uFlow: { value: 0 },
     uRewetStrength: { value: DEFAULT_REWET_STRENGTH },
     uRewetPerChannel: { value: PIGMENT_REWET.clone() },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
+    ...maskUniforms(),
   })
 
   const advectVelocity = createMaterial(ADVECT_VELOCITY_FRAGMENT, {

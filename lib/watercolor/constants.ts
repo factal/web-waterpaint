@@ -3,15 +3,33 @@ import * as THREE from 'three'
 import { type BinderParams } from './types'
 
 export const DEFAULT_DT = 1 / 90
-export const DEPOSITION_BASE = 0.02
-export const PAPER_COLOR = new THREE.Vector3(0.92, 0.91, 0.88)
-export const PAPER_DIFFUSION_STRENGTH = 6.0
-export const PIGMENT_DIFFUSION_COEFF = 0.08
+
 export const KM_LAYER_SCALE = 1.4
+export const PAPER_COLOR = new THREE.Vector3(0.92, 0.91, 0.88)
+export const PIGMENT_DIFFUSION_COEFF = 0.08
+
+export const SPH_MAX_PARTICLES = 8192
+export const SPH_SMOOTHING_RADIUS = 0.035
+export const SPH_REST_DENSITY = 1000
+export const SPH_PARTICLE_MASS = 0.00022
+export const SPH_PRESSURE_RELAXATION = 0.45
+export const SPH_ITERATIONS = 4
+export const SPH_BOUNDARY_DAMPING = 0.6
+export const SPH_SPAWN_MULTIPLIER = 320
+
+export const ABSORPTION_CAPILLARY_RADIUS = 2.6e-4
+export const ABSORPTION_SURFACE_TENSION = 0.0728
+export const ABSORPTION_CONTACT_ANGLE = 0.35
+export const ABSORPTION_MIN_LENGTH = 1e-4
+
 export const DEFAULT_ABSORB_EXPONENT = 0.5
 export const DEFAULT_ABSORB_TIME_OFFSET = 0.15
 export const DEFAULT_ABSORB_MIN_FLUX = 0.02
+
+export const PAPER_DIFFUSION_STRENGTH = 6.0
 export const HUMIDITY_INFLUENCE = 0.6
+export const DEPOSITION_BASE = 0.02
+
 export const GRANULATION_SETTLE_RATE = 0.28
 export const GRANULATION_STRENGTH = 0.45
 

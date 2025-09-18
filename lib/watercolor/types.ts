@@ -46,35 +46,7 @@ export interface SimulationParams {
   reservoir: ReservoirParams
 }
 
-type SwapTarget = {
-  read: THREE.WebGLRenderTarget
-  write: THREE.WebGLRenderTarget
-}
-
-export type PingPongTarget = SwapTarget & {
-  swap: () => void
-}
-
-export type MaterialMap = {
+export interface MaterialMap {
   zero: THREE.RawShaderMaterial
-  splatHeight: THREE.RawShaderMaterial
-  splatVelocity: THREE.RawShaderMaterial
-  splatPigment: THREE.RawShaderMaterial
-  splatBinder: THREE.RawShaderMaterial
-  advectVelocity: THREE.RawShaderMaterial
-  advectHeight: THREE.RawShaderMaterial
-  advectPigment: THREE.RawShaderMaterial
-  diffusePigment: THREE.RawShaderMaterial
-  advectBinder: THREE.RawShaderMaterial
-  binderForces: THREE.RawShaderMaterial
-  absorbDeposit: THREE.RawShaderMaterial
-  absorbHeight: THREE.RawShaderMaterial
-  absorbPigment: THREE.RawShaderMaterial
-  absorbWet: THREE.RawShaderMaterial
-  absorbSettled: THREE.RawShaderMaterial
-  diffuseWet: THREE.RawShaderMaterial
   composite: THREE.RawShaderMaterial
-  divergence: THREE.RawShaderMaterial
-  jacobi: THREE.RawShaderMaterial
-  project: THREE.RawShaderMaterial
 }

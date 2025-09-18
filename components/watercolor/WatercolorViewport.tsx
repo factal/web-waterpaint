@@ -144,6 +144,7 @@ const WatercolorViewport = ({
         const flowScale = 0.25 + 0.75 * waterRatio
         const scaledRadius = Math.max(brushState.radius * radiusScale, 1)
         const scaledFlow = brushState.flow * flowScale
+        const dryness = brushState.type === 'water' ? 0 : Math.min(1, Math.max(0, 1 - waterRatio))
 
         const color: [number, number, number] = brushState.type === 'pigment'
           ? [
@@ -159,6 +160,7 @@ const WatercolorViewport = ({
           flow: scaledFlow,
           type: brushState.type,
           color,
+          dryness,
         })
 
         const areaFactor = (scaledRadius / size) ** 2

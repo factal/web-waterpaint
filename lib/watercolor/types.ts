@@ -8,6 +8,8 @@ export interface BrushSettings {
   flow: number
   type: BrushType
   color: [number, number, number]
+  dryness?: number
+  dryThreshold?: number
 }
 
 export interface BinderParams {

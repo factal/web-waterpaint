@@ -45,7 +45,10 @@ import { type MaterialMap } from './types'
 
 const sanitizeShader = (code: string) => code.trimStart()
 
-function createMaterial(fragmentShader: string, uniforms: Record<string, THREE.IUniform>): THREE.RawShaderMaterial {
+function createMaterial(
+  fragmentShader: string,
+  uniforms: Record<string, THREE.IUniform>,
+): THREE.RawShaderMaterial {
   return new THREE.RawShaderMaterial({
     uniforms,
     vertexShader: sanitizeShader(FULLSCREEN_VERTEX),
@@ -57,7 +60,11 @@ function createMaterial(fragmentShader: string, uniforms: Record<string, THREE.I
   })
 }
 
-export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.DataTexture): MaterialMap {
+export function createMaterials(
+  texelSize: THREE.Vector2,
+  fiberTexture: THREE.DataTexture,
+  paperHeightTexture: THREE.DataTexture,
+): MaterialMap {
   const centerUniform = () => ({ value: new THREE.Vector2(0, 0) })
   const pigmentUniform = () => ({ value: new THREE.Vector3(0, 0, 0) })
 
@@ -69,6 +76,9 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uRadius: { value: 0 },
     uFlow: { value: 0 },
     uToolType: { value: 0 },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
   })
 
   const splatVelocity = createMaterial(SPLAT_VELOCITY_FRAGMENT, {
@@ -76,6 +86,9 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uCenter: centerUniform(),
     uRadius: { value: 0 },
     uFlow: { value: 0 },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
   })
 
   const splatPigment = createMaterial(SPLAT_PIGMENT_FRAGMENT, {
@@ -85,6 +98,9 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uPigment: pigmentUniform(),
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
   })
 
   const splatBinder = createMaterial(SPLAT_BINDER_FRAGMENT, {
@@ -94,6 +110,9 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uBinderStrength: { value: DEFAULT_BINDER_PARAMS.injection },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
   })
 
   const advectVelocity = createMaterial(ADVECT_VELOCITY_FRAGMENT, {

@@ -27,11 +27,12 @@ All simulation textures use half floats so they remain filterable on WebGL2.
 1. **Brush splat** – Water, binder, and optional pigment are injected using Gaussian falloffs. Radial velocity impulses emulate brush agitation. When the active brush is in a drybrush regime, splat shaders gate injection by sampling `paperHeight` and applying a smooth dry threshold driven by the brush’s wetness so that only the highest paper ridges receive paint.
 2. **Binder evolution** – The viscoelastic binder field is advected with the flow, diffused, and damped. Binder gradients feed the `binderForces` pass, which applies elastic spring forces and viscosity-dependent damping to the velocity field.
 3. **Pressure projection** – Stam (1999) projection solves a Poisson equation to enforce incompressibility before the next transport step.
-4. **Fluid transport** – Semi-Lagrangian advection updates velocity (with slope-driven gravity), water height (including binder buoyancy), and dissolved pigment.
-5. **Pigment diffusion** – A dedicated Fickian diffusion pass integrates `∂C/∂t = D∇²C`, ensuring pigment blurs even in stagnant water. The coefficient is exposed through the simulation constants.
-6. **Absorption, evaporation, and granulation** – The absorb suite reads the current state and returns updated `H`, `C`, `DEP`, `W`, and `S`. Lucas–Washburn dynamics drive absorption using `A = A₀·(1 - w)^{β}` with `β = 0.5` and a temporal decay term `1 / √(t + t₀)`. Edge gradients add blooms, pigment settling feeds the granulation buffer, and paper-height-dependent weighting biases deposition toward microscopic valleys to reproduce fine grain.
-7. **Paper diffusion** – Moisture diffuses anisotropically along a procedural fibre field, keeping wet edges alive and replenishing drier paper with a portion of the absorbed water.
-8. **Kubelka–Munk composite** – Deposited pigment is converted into optical coefficients and shaded against the paper colour with a finite-thickness KM approximation.
+4. **Surface tension relaxation** – A curvature-driven pass analyses `H` with a Laplacian/neighbor mask, suppresses regions where the flow is already energetic, and tugs slender filaments toward their centreline. Sub-threshold strands can snap entirely to prevent numerical cobwebs.
+5. **Fluid transport** – Semi-Lagrangian advection updates velocity (with slope-driven gravity), water height (including binder buoyancy), and dissolved pigment.
+6. **Pigment diffusion** – A dedicated Fickian diffusion pass integrates `∂C/∂t = D∇²C`, ensuring pigment blurs even in stagnant water. The coefficient is exposed through the simulation constants.
+7. **Absorption, evaporation, and granulation** – The absorb suite reads the current state and returns updated `H`, `C`, `DEP`, `W`, and `S`. Lucas–Washburn dynamics drive absorption using `A = A₀·(1 - w)^{β}` with `β = 0.5` and a temporal decay term `1 / √(t + t₀)`. Edge gradients add blooms, pigment settling feeds the granulation buffer, and paper-height-dependent weighting biases deposition toward microscopic valleys to reproduce fine grain.
+8. **Paper diffusion** – Moisture diffuses anisotropically along a procedural fibre field, keeping wet edges alive and replenishing drier paper with a portion of the absorbed water.
+9. **Kubelka–Munk composite** – Deposited pigment is converted into optical coefficients and shaded against the paper colour with a finite-thickness KM approximation.
 
 Between the splat and transport phases, the simulation optionally performs a **rewetting** micro-pass. Whenever a new splat adds
 water on top of dry deposits, a configurable rewet factor transfers a fraction of `DEP` back into the dissolved pigment buffer so
@@ -47,6 +48,21 @@ The binder state (`B`) models the elastic, viscous behaviour of heavy paint medi
 - **Damping:** Binder concentration modulates velocity damping, yielding slower, heavier motion in pigment-rich regions.
 
 Binder parameters (injection, diffusion, decay, elasticity, viscosity, buoyancy) are exposed through `SimulationParams.binder` and default to the values listed in `constants.ts`.
+
+## Surface Tension Relaxation
+
+Immediately after projection the solver evaluates a capillary relaxation pass. The shader samples `H`, `W`, and `UV`, builds a Laplacian of the local height field, and weights it by neighbour occupancy so that only thin, weakly supported filaments are affected. Regions that are already moving quickly (`|UV| > uVelocityLimit`) are ignored to avoid fighting strong advection. The remaining strands receive an inward pull proportional to `uStrength × curvature × wetness`, and segments thinner than `uBreakThreshold` can be snapped away using `uSnapStrength` to clear numerical cobwebs.
+
+Artist-facing controls map to `SimulationParams.surfaceTension`:
+
+- `enabled` toggles the pass entirely for performance or stylistic reasons.
+- `strength` scales the relaxation impulse applied each substep.
+- `threshold` defines how much neighbouring support a region must have before it is considered part of a stable pool.
+- `breakThreshold` sets the water height below which filaments can disappear.
+- `snapStrength` mixes between gentle smoothing and hard snapping of the isolated strands.
+- `velocityLimit` gates the effect to slow-moving water so energetic splashes are left untouched.
+
+Defaults for the block live in `DEFAULT_SURFACE_TENSION_PARAMS`.
 
 ## Pigment Diffusion
 
@@ -115,6 +131,7 @@ Leva panels in the demo map directly to `SimulationParams` fields:
 - **Drying & Deposits** – Base absorption (`A₀`), evaporation (`E₀`), edge bias, bloom strength, flux clamps, and paper texture influence strength.
 - **Flow Dynamics** – Gravity, viscosity, CFL safety factor, and maximum adaptive substeps.
 - **Binder** – Runtime overrides for binder injection, diffusion, decay, elasticity, viscosity, and buoyancy.
+- **Surface Tension** – Enable/disable the filament relaxation pass and tune strength, neighbour thresholding, snapping, and the velocity gate.
 - **Brush Reservoir** – Water/pigment capacities and per-stamp consumption rates.
 - **Pigment Separation** – RGB diffusion/settling overrides and per-pigment presets.
 - **Simulation Features** – Toggles for state-dependent absorption, paper-texture-driven granulation, and rewetting behaviour.

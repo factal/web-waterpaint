@@ -10,6 +10,7 @@ import {
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_BINDER_PARAMS,
   DEFAULT_PAPER_TEXTURE_STRENGTH,
+  DEFAULT_SURFACE_TENSION_PARAMS,
   type BrushType,
   type SimulationParams,
 } from '@/lib/watercolor/WatercolorSimulation'
@@ -215,6 +216,48 @@ export default function Home() {
     maxSubsteps: { label: 'Max Substeps', value: 4, min: 1, max: 8, step: 1 },
   })
 
+  const surfaceTensionControls = useControls('Surface Tension', {
+    enabled: {
+      label: 'Enable Surface Tension',
+      value: DEFAULT_SURFACE_TENSION_PARAMS.enabled,
+    },
+    strength: {
+      label: 'Strength',
+      value: DEFAULT_SURFACE_TENSION_PARAMS.strength,
+      min: 0,
+      max: 8,
+      step: 0.05,
+    },
+    threshold: {
+      label: 'Neighbour Threshold',
+      value: DEFAULT_SURFACE_TENSION_PARAMS.threshold,
+      min: 0,
+      max: 0.5,
+      step: 0.005,
+    },
+    breakThreshold: {
+      label: 'Break Threshold',
+      value: DEFAULT_SURFACE_TENSION_PARAMS.breakThreshold,
+      min: 0,
+      max: 0.2,
+      step: 0.001,
+    },
+    snapStrength: {
+      label: 'Snap Strength',
+      value: DEFAULT_SURFACE_TENSION_PARAMS.snapStrength,
+      min: 0,
+      max: 1,
+      step: 0.01,
+    },
+    velocityLimit: {
+      label: 'Velocity Limit',
+      value: DEFAULT_SURFACE_TENSION_PARAMS.velocityLimit,
+      min: 0.01,
+      max: 2,
+      step: 0.01,
+    },
+  })
+
   const binderControls = useControls('Binder Dynamics', {
     diffusion: {
       label: 'Diffusion',
@@ -285,6 +328,21 @@ export default function Home() {
   const streakDensity = brushControls.streakDensity as number
   const { evap, absorb, edge, backrunStrength } = dryingControls as { evap: number; absorb: number; edge: number; backrunStrength: number }
   const { grav, visc, cfl, maxSubsteps } = dynamicsControls as { grav: number; visc: number; cfl: number; maxSubsteps: number }
+  const {
+    enabled: surfaceTensionEnabled,
+    strength: surfaceTensionStrength,
+    threshold: surfaceTensionThreshold,
+    breakThreshold: surfaceTensionBreakThreshold,
+    snapStrength: surfaceTensionSnapStrength,
+    velocityLimit: surfaceTensionVelocityLimit,
+  } = surfaceTensionControls as {
+    enabled: boolean
+    strength: number
+    threshold: number
+    breakThreshold: number
+    snapStrength: number
+    velocityLimit: number
+  }
   const {
     diffusion: binderDiffusion,
     decay: binderDecay,
@@ -443,6 +501,14 @@ export default function Home() {
       viscosity: binderViscosity,
       buoyancy: binderBuoyancy,
     },
+    surfaceTension: {
+      enabled: surfaceTensionEnabled,
+      strength: surfaceTensionStrength,
+      threshold: surfaceTensionThreshold,
+      breakThreshold: surfaceTensionBreakThreshold,
+      snapStrength: surfaceTensionSnapStrength,
+      velocityLimit: surfaceTensionVelocityLimit,
+    },
     reservoir: {
       waterCapacityWater,
       waterCapacityPigment: waterLoad,
@@ -469,6 +535,12 @@ export default function Home() {
     binderElasticity,
     binderViscosity,
     binderBuoyancy,
+    surfaceTensionEnabled,
+    surfaceTensionStrength,
+    surfaceTensionThreshold,
+    surfaceTensionBreakThreshold,
+    surfaceTensionSnapStrength,
+    surfaceTensionVelocityLimit,
     waterCapacityWater,
     waterLoad,
     pigmentCapacity,

@@ -49,6 +49,15 @@ export interface ReservoirParams {
   stampSpacing: number
 }
 
+export interface SurfaceTensionParams {
+  enabled: boolean
+  strength: number
+  threshold: number
+  breakThreshold: number
+  snapStrength: number
+  velocityLimit: number
+}
+
 export interface SimulationParams {
   grav: number
   visc: number
@@ -66,6 +75,7 @@ export interface SimulationParams {
   maxSubsteps: number
   binder: BinderParams
   reservoir: ReservoirParams
+  surfaceTension: SurfaceTensionParams
   pigmentCoefficients?: PigmentCoefficients
 }
 
@@ -89,6 +99,7 @@ export type MaterialMap = {
   splatRewetDeposit: THREE.RawShaderMaterial
   advectVelocity: THREE.RawShaderMaterial
   advectHeight: THREE.RawShaderMaterial
+  surfaceTension: THREE.RawShaderMaterial
   advectPigment: THREE.RawShaderMaterial
   diffusePigment: THREE.RawShaderMaterial
   advectBinder: THREE.RawShaderMaterial

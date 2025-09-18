@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-export type BrushType = 'water' | 'pigment'
+export type BrushType = 'water' | 'pigment' | 'spatter'
 
 export interface BrushMaskParams {
   texture: THREE.Texture | null

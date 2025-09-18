@@ -14,6 +14,12 @@ export const DEFAULT_ABSORB_MIN_FLUX = 0.02
 export const HUMIDITY_INFLUENCE = 0.6
 export const GRANULATION_SETTLE_RATE = 0.28
 export const GRANULATION_STRENGTH = 0.45
+export const DEFAULT_REWET_STRENGTH = 0.45
+
+// Per-pigment rewet multipliers – higher values dissolve more deposits when water is added.
+// Staining pigments can opt out by setting their channel to zero.
+export const PIGMENT_REWET = new THREE.Vector3(0.75, 0.6, 0.0)
+
 export const DEFAULT_PAPER_TEXTURE_STRENGTH = 0.8
 
 export const PIGMENT_K = [

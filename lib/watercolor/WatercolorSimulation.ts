@@ -162,6 +162,25 @@ export default class WatercolorSimulation {
     this.renderToTarget(splatBinder, this.targets.B.write)
     this.targets.B.swap()
 
+    if (toolType === 0 && flow > 0) {
+      const rewetPigment = this.materials.splatRewetPigment
+      rewetPigment.uniforms.uSource.value = this.targets.C.read.texture
+      rewetPigment.uniforms.uDeposits.value = this.targets.DEP.read.texture
+      rewetPigment.uniforms.uCenter.value.set(center[0], center[1])
+      rewetPigment.uniforms.uRadius.value = radius
+      rewetPigment.uniforms.uFlow.value = flow
+      this.renderToTarget(rewetPigment, this.targets.C.write)
+      this.targets.C.swap()
+
+      const rewetDeposit = this.materials.splatRewetDeposit
+      rewetDeposit.uniforms.uSource.value = this.targets.DEP.read.texture
+      rewetDeposit.uniforms.uCenter.value.set(center[0], center[1])
+      rewetDeposit.uniforms.uRadius.value = radius
+      rewetDeposit.uniforms.uFlow.value = flow
+      this.renderToTarget(rewetDeposit, this.targets.DEP.write)
+      this.targets.DEP.swap()
+    }
+
     const absorbReset = toolType === 0 ? 0.3 : 0.15
     this.absorbElapsed = Math.max(0, this.absorbElapsed - absorbReset * flow)
   }
@@ -610,5 +629,7 @@ export {
   DEFAULT_ABSORB_EXPONENT,
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_ABSORB_MIN_FLUX,
+  DEFAULT_REWET_STRENGTH,
+  PIGMENT_REWET,
   DEFAULT_PAPER_TEXTURE_STRENGTH,
 } from './constants'

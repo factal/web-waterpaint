@@ -21,6 +21,8 @@ import {
   SPLAT_BINDER_FRAGMENT,
   SPLAT_HEIGHT_FRAGMENT,
   SPLAT_PIGMENT_FRAGMENT,
+  SPLAT_REWET_DEPOSIT_FRAGMENT,
+  SPLAT_REWET_PIGMENT_FRAGMENT,
   SPLAT_VELOCITY_FRAGMENT,
   ZERO_FRAGMENT,
   VELOCITY_MAX_FRAGMENT,
@@ -30,6 +32,7 @@ import {
   DEFAULT_ABSORB_MIN_FLUX,
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_BINDER_PARAMS,
+  DEFAULT_REWET_STRENGTH,
   DEFAULT_DT,
   DEPOSITION_BASE,
   GRANULATION_STRENGTH,
@@ -39,6 +42,7 @@ import {
   PAPER_DIFFUSION_STRENGTH,
   PIGMENT_DIFFUSION_COEFF,
   PIGMENT_K,
+  PIGMENT_REWET,
   PIGMENT_S,
 } from './constants'
 import { type MaterialMap } from './types'
@@ -113,6 +117,25 @@ export function createMaterials(
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+  })
+
+  const splatRewetPigment = createMaterial(SPLAT_REWET_PIGMENT_FRAGMENT, {
+    uSource: { value: null },
+    uDeposits: { value: null },
+    uCenter: centerUniform(),
+    uRadius: { value: 0 },
+    uFlow: { value: 0 },
+    uRewetStrength: { value: DEFAULT_REWET_STRENGTH },
+    uRewetPerChannel: { value: PIGMENT_REWET.clone() },
+  })
+
+  const splatRewetDeposit = createMaterial(SPLAT_REWET_DEPOSIT_FRAGMENT, {
+    uSource: { value: null },
+    uCenter: centerUniform(),
+    uRadius: { value: 0 },
+    uFlow: { value: 0 },
+    uRewetStrength: { value: DEFAULT_REWET_STRENGTH },
+    uRewetPerChannel: { value: PIGMENT_REWET.clone() },
   })
 
   const advectVelocity = createMaterial(ADVECT_VELOCITY_FRAGMENT, {
@@ -238,6 +261,8 @@ export function createMaterials(
     splatVelocity,
     splatPigment,
     splatBinder,
+    splatRewetPigment,
+    splatRewetDeposit,
     advectVelocity,
     advectHeight,
     advectPigment,

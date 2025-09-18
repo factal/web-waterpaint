@@ -98,6 +98,38 @@ void main() {
 }
 `
 
+export const SPLAT_REWET_PIGMENT_FRAGMENT = `
+${SPLAT_COMMON}
+uniform sampler2D uDeposits;
+uniform float uRewetStrength;
+uniform vec3 uRewetPerChannel;
+void main() {
+  vec4 src = texture(uSource, vUv);
+  vec3 dep = texture(uDeposits, vUv).rgb;
+  float fall = splatFalloff(vUv, uRadius);
+  float fraction = clamp(uRewetStrength * uFlow * fall, 0.0, 1.0);
+  vec3 weights = clamp(uRewetPerChannel, vec3(0.0), vec3(1.0));
+  vec3 dissolved = min(dep, dep * (weights * fraction));
+  fragColor = vec4(src.rgb + dissolved, src.a);
+}
+`
+
+export const SPLAT_REWET_DEPOSIT_FRAGMENT = `
+${SPLAT_COMMON}
+uniform float uRewetStrength;
+uniform vec3 uRewetPerChannel;
+void main() {
+  vec4 src = texture(uSource, vUv);
+  vec3 dep = src.rgb;
+  float fall = splatFalloff(vUv, uRadius);
+  float fraction = clamp(uRewetStrength * uFlow * fall, 0.0, 1.0);
+  vec3 weights = clamp(uRewetPerChannel, vec3(0.0), vec3(1.0));
+  vec3 dissolved = min(dep, dep * (weights * fraction));
+  vec3 newDep = max(dep - dissolved, vec3(0.0));
+  fragColor = vec4(newDep, 1.0);
+}
+`
+
 export const ADVECT_VELOCITY_FRAGMENT = `
 precision highp float;
 in vec2 vUv;

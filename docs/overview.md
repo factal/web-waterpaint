@@ -15,18 +15,27 @@ The watercolor system couples a shallow-water solver with pigment transport, pap
 | `S` | ping-pong RGBA16F | Settled pigment reservoir used for granulation (RGB). |
 | `KM` | single RGBA16F | Kubelka–Munk composite colour rendered to screen. |
 
+In addition to the dynamic framebuffers, the simulation owns a static single-channel `paperHeight` texture. It is generated at
+startup from fractal noise seeded alongside the fibre field so that drybrush masking and fibre diffusion share the same
+micro-structure. Because it is immutable, the height map is stored as a `DataTexture` and bound as a read-only sampler to the
+passes that need it.
+
 All simulation textures use half floats so they remain filterable on WebGL2.
 
 ## Frame Pipeline
 
-1. **Brush splat** – Water, binder, and optional pigment are injected using Gaussian falloffs. Radial velocity impulses emulate brush agitation.
+1. **Brush splat** – Water, binder, and optional pigment are injected using Gaussian falloffs. Radial velocity impulses emulate brush agitation. When the active brush is in a drybrush regime, splat shaders gate injection by sampling `paperHeight` and applying a smooth dry threshold driven by the brush’s wetness so that only the highest paper ridges receive paint.
 2. **Binder evolution** – The viscoelastic binder field is advected with the flow, diffused, and damped. Binder gradients feed the `binderForces` pass, which applies elastic spring forces and viscosity-dependent damping to the velocity field.
 3. **Pressure projection** – Stam (1999) projection solves a Poisson equation to enforce incompressibility before the next transport step.
 4. **Fluid transport** – Semi-Lagrangian advection updates velocity (with slope-driven gravity), water height (including binder buoyancy), and dissolved pigment.
 5. **Pigment diffusion** – A dedicated Fickian diffusion pass integrates `∂C/∂t = D∇²C`, ensuring pigment blurs even in stagnant water. The coefficient is exposed through the simulation constants.
-6. **Absorption, evaporation, and granulation** – The absorb suite reads the current state and returns updated `H`, `C`, `DEP`, `W`, and `S`. Lucas–Washburn dynamics drive absorption using `A = A₀·(1 - w)^{β}` with `β = 0.5` and a temporal decay term `1 / √(t + t₀)`. Edge gradients add blooms, while pigment settling feeds the granulation buffer.
+6. **Absorption, evaporation, and granulation** – The absorb suite reads the current state and returns updated `H`, `C`, `DEP`, `W`, and `S`. Lucas–Washburn dynamics drive absorption using `A = A₀·(1 - w)^{β}` with `β = 0.5` and a temporal decay term `1 / √(t + t₀)`. Edge gradients add blooms, pigment settling feeds the granulation buffer, and paper-height-dependent weighting biases deposition toward microscopic valleys to reproduce fine grain.
 7. **Paper diffusion** – Moisture diffuses anisotropically along a procedural fibre field, keeping wet edges alive and replenishing drier paper with a portion of the absorbed water.
 8. **Kubelka–Munk composite** – Deposited pigment is converted into optical coefficients and shaded against the paper colour with a finite-thickness KM approximation.
+
+Between the splat and transport phases, the simulation optionally performs a **rewetting** micro-pass. Whenever a new splat adds
+water on top of dry deposits, a configurable rewet factor transfers a fraction of `DEP` back into the dissolved pigment buffer so
+that layered washes can lift or soften previous strokes.
 
 ## Viscoelastic Binder Field
 
@@ -41,7 +50,15 @@ Binder parameters (injection, diffusion, decay, elasticity, viscosity, buoyancy)
 
 ## Pigment Diffusion
 
-Watercolor pigments bleed even without bulk flow. The `diffusePigment` pass evaluates a four-neighbour Laplacian on the dissolved pigment buffer and integrates it with an adjustable diffusion coefficient. The pass runs every substep immediately after advection so the absorbed pigment sees the latest blurred concentrations. The coefficient can be tuned in `constants.ts` or overridden at runtime.
+Watercolor pigments bleed even without bulk flow. The `diffusePigment` pass evaluates a four-neighbour Laplacian on the dissolved pigment buffer and integrates it with adjustable diffusion coefficients. Diffusion is now vector-valued: `uDiffusionRGB` scales the Laplacian per colour channel so heavier pigment components can spread more slowly than lighter ones. The pass runs every substep immediately after advection so the absorbed pigment sees the latest blurred concentrations. Defaults keep all components equal, but pigment presets can supply custom coefficients via `SimulationParams`.
+
+## Pigment Settling & Separation
+
+Component-wise settling complements the diffusion changes. The absorption shader exposes `uSettleRGB`, multiplying the pigment
+reservoir per channel before transferring it into the `S` and `DEP` buffers. By tuning these vectors, a single RGB pigment can
+approximate multi-species behaviour: channels with higher settling sink quickly and contribute more to granulation, while lighter
+channels remain in solution and continue to diffuse. Pigment definitions may supply preset vectors for common watercolour paints,
+and the UI exposes overrides for advanced users.
 
 ## Lucas–Washburn Absorption
 
@@ -55,7 +72,29 @@ Evaporation retains its humidity coupling, and granulation/backrun logic now run
 
 ## Granulation Reservoir (`S`)
 
-Settled pigment accumulates into the `S` buffer before it bonds to the paper. Deposition draws proportionally from both dissolved (`C`) and settled (`S`) pigment, letting heavy particles migrate toward ridges and edges, reproducing the characteristic grain of traditional watercolour washes.
+Settled pigment accumulates into the `S` buffer before it bonds to the paper. Deposition draws proportionally from both dissolved (`C`) and settled (`S`) pigment, letting heavy particles migrate toward ridges and edges, reproducing the characteristic grain of traditional watercolour washes. Paper texture bias multiplies the deposition and settling terms, deepening valleys and creating fine mottling across large washes.
+
+## Paper Microstructure & Drybrush
+
+`paperHeight` represents sub-millimetre paper relief. The splat shaders sample it alongside the brush falloff and compare it to a
+dry threshold derived from brush wetness or an explicit “dryness” slider. A `smoothstep` range keeps the transition soft so that
+even dry brushes can occasionally catch lower fibres. The result is the familiar skip-and-grain texture of traditional drybrush
+strokes. Because the height map aligns with the fibre diffusion orientation, the grain direction matches subsequent moisture
+transport.
+
+## Paper-Driven Granulation
+
+The absorb shader mixes `paperHeight` into its deposition and settling coefficients through a strength uniform named
+`uPaperTextureStrength`. With the strength at zero, the system behaves exactly as before. As the value increases, pigment is
+redistributed toward low height regions, enhancing granulation even within otherwise flat washes. The modulation conserves total
+pigment and can be toggled from the UI for performance-sensitive scenarios.
+
+## Layer Rewetting
+
+To mimic pigment lifting, each water-bearing splat can trigger a rewet pass. The pass compares the pre- and post-splat water
+amount and, where an increase is detected, transfers `rewetFactor × DEP` back into the dissolved pigment pool while reducing the
+deposit by the same amount. The factor is clampable per pigment so staining colours remain fixed while delicate pigments bleed
+back into solution. This enables glazing workflows where a fresh wash can soften edges or revive colour from the underlying layer.
 
 ## Module Layout
 
@@ -72,12 +111,13 @@ The separation keeps `WatercolorSimulation` focused on sequencing while shader d
 
 Leva panels in the demo map directly to `SimulationParams` fields:
 
-- **Brush** – Tool selection, radius, and flow, mapped to the splat shaders.
-- **Drying & Deposits** – Base absorption (`A₀`), evaporation (`E₀`), edge bias, bloom strength, and flux clamps.
+- **Brush** – Tool selection, radius, flow, and drybrush threshold controls mapped to the splat shaders.
+- **Drying & Deposits** – Base absorption (`A₀`), evaporation (`E₀`), edge bias, bloom strength, flux clamps, and paper texture influence strength.
 - **Flow Dynamics** – Gravity, viscosity, CFL safety factor, and maximum adaptive substeps.
 - **Binder** – Runtime overrides for binder injection, diffusion, decay, elasticity, viscosity, and buoyancy.
 - **Brush Reservoir** – Water/pigment capacities and per-stamp consumption rates.
-- **Simulation Features** – Toggles for state-dependent absorption and granulation plus paper texture influence strength.
+- **Pigment Separation** – RGB diffusion/settling overrides and per-pigment presets.
+- **Simulation Features** – Toggles for state-dependent absorption, paper-texture-driven granulation, and rewetting behaviour.
 
 ## References
 

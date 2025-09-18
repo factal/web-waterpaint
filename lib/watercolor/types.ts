@@ -58,6 +58,13 @@ export interface SurfaceTensionParams {
   velocityLimit: number
 }
 
+export interface CapillaryFringeParams {
+  enabled: boolean
+  strength: number
+  threshold: number
+  noiseScale: number
+}
+
 export interface SimulationParams {
   grav: number
   visc: number
@@ -76,6 +83,7 @@ export interface SimulationParams {
   binder: BinderParams
   reservoir: ReservoirParams
   surfaceTension: SurfaceTensionParams
+  capillaryFringe: CapillaryFringeParams
   pigmentCoefficients?: PigmentCoefficients
 }
 
@@ -86,6 +94,22 @@ type SwapTarget = {
 
 export type PingPongTarget = SwapTarget & {
   swap: () => void
+}
+
+type WetDiffusionUniforms = {
+  uWet: THREE.IUniform
+  uFiber: THREE.IUniform
+  uTexel: THREE.IUniform
+  uDt: THREE.IUniform
+  uReplenish: THREE.IUniform
+  uStrength: THREE.IUniform
+  uFringeStrength: THREE.IUniform
+  uFringeThreshold: THREE.IUniform
+  uFringeNoiseScale: THREE.IUniform
+}
+
+export type DiffuseWetMaterial = THREE.RawShaderMaterial & {
+  uniforms: WetDiffusionUniforms
 }
 
 export type MaterialMap = {
@@ -109,7 +133,7 @@ export type MaterialMap = {
   absorbPigment: THREE.RawShaderMaterial
   absorbWet: THREE.RawShaderMaterial
   absorbSettled: THREE.RawShaderMaterial
-  diffuseWet: THREE.RawShaderMaterial
+  diffuseWet: DiffuseWetMaterial
   composite: THREE.RawShaderMaterial
   divergence: THREE.RawShaderMaterial
   jacobi: THREE.RawShaderMaterial

@@ -11,6 +11,7 @@ import {
   DEFAULT_BINDER_PARAMS,
   DEFAULT_PAPER_TEXTURE_STRENGTH,
   DEFAULT_SURFACE_TENSION_PARAMS,
+  DEFAULT_FRINGE_PARAMS,
   type BrushType,
   type SimulationParams,
 } from '@/lib/watercolor/WatercolorSimulation'
@@ -316,6 +317,31 @@ export default function Home() {
     },
   })
 
+  const fringeControls = useControls('Capillary Fringe', {
+    enabled: { label: 'Enable Fringe', value: DEFAULT_FRINGE_PARAMS.enabled },
+    strength: {
+      label: 'Strength',
+      value: DEFAULT_FRINGE_PARAMS.strength,
+      min: 0,
+      max: 2,
+      step: 0.01,
+    },
+    threshold: {
+      label: 'Front Threshold',
+      value: DEFAULT_FRINGE_PARAMS.threshold,
+      min: 0.01,
+      max: 0.6,
+      step: 0.005,
+    },
+    noiseScale: {
+      label: 'Noise Scale',
+      value: DEFAULT_FRINGE_PARAMS.noiseScale,
+      min: 1,
+      max: 128,
+      step: 1,
+    },
+  })
+
   useControls('Actions', {
     clear: button(() => setClearSignal((value) => value + 1)),
   })
@@ -385,6 +411,17 @@ export default function Home() {
     stateAbsorption: boolean
     granulation: boolean
     paperTextureStrength: number
+  }
+  const {
+    enabled: fringeEnabled,
+    strength: fringeStrength,
+    threshold: fringeThreshold,
+    noiseScale: fringeNoiseScale,
+  } = fringeControls as {
+    enabled: boolean
+    strength: number
+    threshold: number
+    noiseScale: number
   }
   const { waterCapacityWater, pigmentCapacity, waterConsumption, pigmentConsumption, stampSpacing } = reservoirControls as {
     waterCapacityWater: number;
@@ -509,6 +546,12 @@ export default function Home() {
       snapStrength: surfaceTensionSnapStrength,
       velocityLimit: surfaceTensionVelocityLimit,
     },
+    capillaryFringe: {
+      enabled: fringeEnabled,
+      strength: fringeStrength,
+      threshold: fringeThreshold,
+      noiseScale: fringeNoiseScale,
+    },
     reservoir: {
       waterCapacityWater,
       waterCapacityPigment: waterLoad,
@@ -541,6 +584,10 @@ export default function Home() {
     surfaceTensionBreakThreshold,
     surfaceTensionSnapStrength,
     surfaceTensionVelocityLimit,
+    fringeEnabled,
+    fringeStrength,
+    fringeThreshold,
+    fringeNoiseScale,
     waterCapacityWater,
     waterLoad,
     pigmentCapacity,

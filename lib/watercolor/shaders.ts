@@ -25,10 +25,21 @@ uniform sampler2D uSource;
 uniform vec2 uCenter;
 uniform float uRadius;
 uniform float uFlow;
+uniform sampler2D uPaperHeight;
+uniform float uDryThreshold;
+uniform float uDryInfluence;
 float splatFalloff(vec2 uv, float radius) {
   vec2 delta = uv - uCenter;
   float r = max(radius, 1e-6);
   return exp(-9.0 * dot(delta, delta) / (r * r + 1e-6));
+}
+float paperDryGate(vec2 uv, float flow) {
+  float height = texture(uPaperHeight, uv).r;
+  float wetness = clamp(flow, 0.0, 1.0);
+  float dryMix = clamp(uDryInfluence, 0.0, 1.0);
+  float feather = mix(0.03, 0.18, 1.0 - wetness);
+  float ramp = smoothstep(uDryThreshold - feather, uDryThreshold + feather, height);
+  return mix(1.0, 1.0 - ramp, dryMix);
 }
 `
 
@@ -38,8 +49,9 @@ uniform float uToolType;
 void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
+  float gate = paperDryGate(vUv, uFlow);
   float waterMul = mix(1.0, 0.7, step(0.5, uToolType));
-  src.r += waterMul * uFlow * fall;
+  src.r += waterMul * uFlow * fall * gate;
   fragColor = vec4(src.r, 0.0, 0.0, 1.0);
 }
 `
@@ -50,9 +62,10 @@ void main() {
   vec4 src = texture(uSource, vUv);
   vec2 delta = vUv - uCenter;
   float fall = splatFalloff(vUv, uRadius);
+  float gate = paperDryGate(vUv, uFlow);
   float len = length(delta);
   vec2 dir = len > 1e-6 ? delta / len : vec2(0.0);
-  vec2 dv = dir * (0.7 * uFlow * fall);
+  vec2 dv = dir * (0.7 * uFlow * fall * gate);
   fragColor = vec4(src.xy + dv, 0.0, 1.0);
 }
 `
@@ -64,8 +77,9 @@ uniform vec3 uPigment;
 void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
+  float gate = paperDryGate(vUv, uFlow);
   float pigmentMask = step(0.5, uToolType);
-  vec3 add = uPigment * (uFlow * fall * pigmentMask);
+  vec3 add = uPigment * (uFlow * fall * pigmentMask * gate);
   fragColor = vec4(src.rgb + add, src.a);
 }
 `
@@ -77,8 +91,9 @@ uniform float uBinderStrength;
 void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
+  float gate = paperDryGate(vUv, uFlow);
   float mask = step(0.5, uToolType);
-  float add = uBinderStrength * uFlow * fall * mask;
+  float add = uBinderStrength * uFlow * fall * mask * gate;
   fragColor = vec4(src.r + add, 0.0, 0.0, 1.0);
 }
 `

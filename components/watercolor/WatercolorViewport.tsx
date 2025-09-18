@@ -10,6 +10,9 @@ type BrushSettings = {
   flow: number
   type: BrushType
   color: [number, number, number]
+  pasteMode?: boolean
+  binderBoost?: number
+  pigmentBoost?: number
 }
 
 type WatercolorViewportProps = {
@@ -144,7 +147,13 @@ const WatercolorViewport = ({
         const flowScale = 0.25 + 0.75 * waterRatio
         const scaledRadius = Math.max(brushState.radius * radiusScale, 1)
         const scaledFlow = brushState.flow * flowScale
-        const dryness = brushState.type === 'water' ? 0 : Math.min(1, Math.max(0, 1 - waterRatio))
+        const baseDryness =
+          brushState.type === 'water' ? 0 : Math.min(1, Math.max(0, 1 - waterRatio))
+        const reservoirSolvent = baseDryness > 0.75 ? baseDryness : 0
+        const pasteActive = brushState.type === 'pigment' && brushState.pasteMode
+        const lowSolvent = pasteActive ? 1 : reservoirSolvent
+        const dryness = pasteActive ? Math.max(baseDryness, 0.92) : baseDryness
+        const dryThreshold = lowSolvent > 0 ? 0.82 : undefined
 
         const color: [number, number, number] = brushState.type === 'pigment'
           ? [
@@ -161,6 +170,10 @@ const WatercolorViewport = ({
           type: brushState.type,
           color,
           dryness,
+          dryThreshold,
+          lowSolvent,
+          binderBoost: brushState.binderBoost,
+          pigmentBoost: brushState.pigmentBoost,
         })
 
         const areaFactor = (scaledRadius / size) ** 2

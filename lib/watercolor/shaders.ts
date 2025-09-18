@@ -74,12 +74,17 @@ export const SPLAT_PIGMENT_FRAGMENT = `
 ${SPLAT_COMMON}
 uniform float uToolType;
 uniform vec3 uPigment;
+uniform float uLowSolvent;
+uniform float uBoost;
 void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
   float gate = paperDryGate(vUv, uFlow);
   float pigmentMask = step(0.5, uToolType);
-  vec3 add = uPigment * (uFlow * fall * pigmentMask * gate);
+  float solvent = clamp(uLowSolvent, 0.0, 1.0);
+  float boost = mix(1.0, max(uBoost, 1.0), solvent);
+  float baseFlow = mix(uFlow, max(uFlow, 0.12), solvent);
+  vec3 add = uPigment * (baseFlow * boost * fall * pigmentMask * gate);
   fragColor = vec4(src.rgb + add, src.a);
 }
 `
@@ -88,13 +93,33 @@ export const SPLAT_BINDER_FRAGMENT = `
 ${SPLAT_COMMON}
 uniform float uToolType;
 uniform float uBinderStrength;
+uniform float uLowSolvent;
 void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
   float gate = paperDryGate(vUv, uFlow);
   float mask = step(0.5, uToolType);
-  float add = uBinderStrength * uFlow * fall * mask * gate;
+  float solvent = clamp(uLowSolvent, 0.0, 1.0);
+  float baseFlow = mix(uFlow, max(uFlow, 0.35), solvent);
+  float add = uBinderStrength * baseFlow * fall * mask * gate;
   fragColor = vec4(src.r + add, 0.0, 0.0, 1.0);
+}
+`
+
+export const SPLAT_DEPOSIT_FRAGMENT = `
+${SPLAT_COMMON}
+uniform vec3 uPigment;
+uniform float uLowSolvent;
+uniform float uBoost;
+void main() {
+  vec4 src = texture(uSource, vUv);
+  float fall = splatFalloff(vUv, uRadius);
+  float gate = paperDryGate(vUv, uFlow);
+  float solvent = clamp(uLowSolvent, 0.0, 1.0);
+  float boost = mix(1.0, max(uBoost, 1.0), solvent);
+  float baseFlow = mix(uFlow, max(uFlow, 0.15), solvent);
+  vec3 add = uPigment * (baseFlow * boost * solvent * fall * gate);
+  fragColor = vec4(src.rgb + add, 1.0);
 }
 `
 
@@ -257,6 +282,9 @@ uniform vec2 uTexel;
 uniform float uDt;
 uniform float uElasticity;
 uniform float uViscosity;
+uniform float uLowSolvent;
+uniform float uPasteClamp;
+uniform float uPasteDamping;
 
 vec2 binderGradient(vec2 uv) {
   float left = texture(uBinder, uv - vec2(uTexel.x, 0.0)).r;
@@ -272,8 +300,14 @@ void main() {
   vec2 grad = binderGradient(vUv);
   vec2 springForce = -uElasticity * grad;
   vel += springForce * uDt;
-  float damping = clamp(uViscosity * binder * uDt, 0.0, 0.95);
+  float solvent = clamp(uLowSolvent, 0.0, 1.0);
+  float damping = clamp(uViscosity * binder * uDt + solvent * uPasteDamping, 0.0, 0.98);
   vel *= (1.0 - damping);
+  float maxSpeed = max(1e-4, mix(1.0, uPasteClamp, solvent));
+  float speed = length(vel);
+  if (speed > maxSpeed) {
+    vel *= maxSpeed / speed;
+  }
   fragColor = vec4(vel, 0.0, 1.0);
 }
 `

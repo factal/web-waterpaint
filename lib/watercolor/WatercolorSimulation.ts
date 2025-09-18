@@ -49,6 +49,8 @@ export default class WatercolorSimulation {
   private readonly velocityReadBuffer = new Float32Array(4)
   private binderSettings: BinderParams
   private absorbElapsed = 0
+  private binderBoostFactor = 1
+  private pasteIntensity = 0
 
   // Set up render targets, materials, and state needed for the solver.
   constructor(renderer: THREE.WebGLRenderer, size = 512) {
@@ -102,7 +104,19 @@ export default class WatercolorSimulation {
 
   // Inject water or pigment into the simulation at a given position.
   splat(brush: BrushSettings) {
-    const { center, radius, flow, type, color, dryness = 0, dryThreshold } = brush
+    const {
+      center,
+      radius,
+      flow,
+      type,
+      color,
+      dryness = 0,
+      dryThreshold,
+      lowSolvent = 0,
+      binderBoost = 1,
+      pigmentBoost = 1,
+      depositBoost,
+    } = brush
     const toolType = type === 'water' ? 0 : 1
 
     const normalizedFlow = THREE.MathUtils.clamp(flow, 0, 1)
@@ -111,11 +125,23 @@ export default class WatercolorSimulation {
     const computedThreshold = THREE.MathUtils.lerp(-0.15, 0.7, dryInfluence)
     const threshold = THREE.MathUtils.clamp(dryThreshold ?? computedThreshold, -0.25, 1.0)
 
+    const solvent = THREE.MathUtils.clamp(lowSolvent, 0, 1)
+    const pigmentTarget = Math.max(pigmentBoost, 1)
+    const depositTarget = Math.max(depositBoost ?? pigmentTarget, 1)
+    const binderTarget = Math.max(binderBoost, 1)
+    const binderMultiplier = THREE.MathUtils.lerp(1, binderTarget, solvent)
+    const pasteActive = toolType === 1 && solvent > 0
+    if (pasteActive) {
+      this.pasteIntensity = Math.max(this.pasteIntensity, solvent)
+      this.binderBoostFactor = Math.max(this.binderBoostFactor, binderMultiplier)
+    }
+
     const splatMaterials = [
       this.materials.splatHeight,
       this.materials.splatVelocity,
       this.materials.splatPigment,
       this.materials.splatBinder,
+      this.materials.splatDeposit,
     ]
 
     splatMaterials.forEach((material) => {
@@ -148,7 +174,10 @@ export default class WatercolorSimulation {
     splatPigment.uniforms.uRadius.value = radius
     splatPigment.uniforms.uFlow.value = flow
     splatPigment.uniforms.uToolType.value = toolType
-    splatPigment.uniforms.uPigment.value.set(color[0], color[1], color[2])
+    const pigmentUniform = splatPigment.uniforms.uPigment.value as THREE.Vector3
+    pigmentUniform.set(color[0], color[1], color[2])
+    splatPigment.uniforms.uLowSolvent.value = solvent
+    splatPigment.uniforms.uBoost.value = pigmentTarget
     this.renderToTarget(splatPigment, this.targets.C.write)
     this.targets.C.swap()
 
@@ -158,9 +187,24 @@ export default class WatercolorSimulation {
     splatBinder.uniforms.uRadius.value = radius
     splatBinder.uniforms.uFlow.value = flow
     splatBinder.uniforms.uToolType.value = toolType
-    splatBinder.uniforms.uBinderStrength.value = this.binderSettings.injection
+    splatBinder.uniforms.uBinderStrength.value = this.binderSettings.injection * binderMultiplier
+    splatBinder.uniforms.uLowSolvent.value = solvent
     this.renderToTarget(splatBinder, this.targets.B.write)
     this.targets.B.swap()
+
+    if (pasteActive) {
+      const splatDeposit = this.materials.splatDeposit
+      splatDeposit.uniforms.uSource.value = this.targets.DEP.read.texture
+      splatDeposit.uniforms.uCenter.value.set(center[0], center[1])
+      splatDeposit.uniforms.uRadius.value = radius
+      splatDeposit.uniforms.uFlow.value = flow
+      const depositPigment = splatDeposit.uniforms.uPigment.value as THREE.Vector3
+      depositPigment.set(color[0], color[1], color[2])
+      splatDeposit.uniforms.uLowSolvent.value = solvent
+      splatDeposit.uniforms.uBoost.value = depositTarget
+      this.renderToTarget(splatDeposit, this.targets.DEP.write)
+      this.targets.DEP.swap()
+    }
 
     if (toolType === 0 && flow > 0) {
       const rewetPigment = this.materials.splatRewetPigment
@@ -183,6 +227,10 @@ export default class WatercolorSimulation {
 
     const absorbReset = toolType === 0 ? 0.3 : 0.15
     this.absorbElapsed = Math.max(0, this.absorbElapsed - absorbReset * flow)
+    if (pasteActive) {
+      const evapBoost = THREE.MathUtils.lerp(0.8, 1.6, solvent)
+      this.absorbElapsed += evapBoost
+    }
   }
 
   // Run one simulation step using semi-Lagrangian advection and absorption.
@@ -234,13 +282,27 @@ export default class WatercolorSimulation {
       this.targets.B.swap()
 
       const binderForces = this.materials.binderForces
+      const pasteIntensity = THREE.MathUtils.clamp(this.pasteIntensity, 0, 1)
+      const binderMultiplier = pasteIntensity > 0 ? this.binderBoostFactor : 1
       binderForces.uniforms.uVelocity.value = this.targets.UV.read.texture
       binderForces.uniforms.uBinder.value = this.targets.B.read.texture
       binderForces.uniforms.uDt.value = substepDt
-      binderForces.uniforms.uElasticity.value = binder.elasticity
-      binderForces.uniforms.uViscosity.value = binder.viscosity
+      binderForces.uniforms.uElasticity.value = binder.elasticity * binderMultiplier
+      binderForces.uniforms.uViscosity.value = binder.viscosity * binderMultiplier
+      binderForces.uniforms.uLowSolvent.value = pasteIntensity
+      binderForces.uniforms.uPasteClamp.value = THREE.MathUtils.lerp(1.0, 0.05, pasteIntensity)
+      binderForces.uniforms.uPasteDamping.value = THREE.MathUtils.lerp(0.0, 0.85, pasteIntensity)
       this.renderToTarget(binderForces, this.targets.UV.write)
       this.targets.UV.swap()
+      if (pasteIntensity > 0) {
+        this.pasteIntensity = Math.max(0, pasteIntensity - substepDt * 1.8)
+      } else {
+        this.pasteIntensity = 0
+      }
+      this.binderBoostFactor = THREE.MathUtils.lerp(this.binderBoostFactor, 1, substepDt * 1.5)
+      if (this.binderBoostFactor < 1.0001) {
+        this.binderBoostFactor = 1
+      }
 
       const advectVel = this.materials.advectVelocity
       advectVel.uniforms.uHeight.value = this.targets.H.read.texture
@@ -452,6 +514,8 @@ export default class WatercolorSimulation {
     this.renderToTarget(this.materials.zero, this.divergence)
     this.renderToTarget(this.materials.zero, this.compositeTarget)
     this.absorbElapsed = 0
+    this.binderBoostFactor = 1
+    this.pasteIntensity = 0
   }
 
   // Release GPU allocations when the simulation is no longer needed.

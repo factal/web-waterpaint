@@ -19,6 +19,7 @@ import {
   PRESSURE_JACOBI_FRAGMENT,
   PRESSURE_PROJECT_FRAGMENT,
   SPLAT_BINDER_FRAGMENT,
+  SPLAT_DEPOSIT_FRAGMENT,
   SPLAT_HEIGHT_FRAGMENT,
   SPLAT_PIGMENT_FRAGMENT,
   SPLAT_REWET_DEPOSIT_FRAGMENT,
@@ -102,6 +103,8 @@ export function createMaterials(
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uPigment: pigmentUniform(),
+    uLowSolvent: { value: 0 },
+    uBoost: { value: 1 },
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
@@ -114,6 +117,20 @@ export function createMaterials(
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uBinderStrength: { value: DEFAULT_BINDER_PARAMS.injection },
+    uLowSolvent: { value: 0 },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0.45 },
+    uDryInfluence: { value: 0 },
+  })
+
+  const splatDeposit = createMaterial(SPLAT_DEPOSIT_FRAGMENT, {
+    uSource: { value: null },
+    uCenter: centerUniform(),
+    uRadius: { value: 0 },
+    uFlow: { value: 0 },
+    uPigment: pigmentUniform(),
+    uLowSolvent: { value: 0 },
+    uBoost: { value: 1 },
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
@@ -190,6 +207,9 @@ export function createMaterials(
     uDt: { value: DEFAULT_DT },
     uElasticity: { value: DEFAULT_BINDER_PARAMS.elasticity },
     uViscosity: { value: DEFAULT_BINDER_PARAMS.viscosity },
+    uLowSolvent: { value: 0 },
+    uPasteClamp: { value: 0.1 },
+    uPasteDamping: { value: 0.85 },
   })
 
   const absorbUniforms = () => ({
@@ -261,6 +281,7 @@ export function createMaterials(
     splatVelocity,
     splatPigment,
     splatBinder,
+    splatDeposit,
     splatRewetPigment,
     splatRewetDeposit,
     advectVelocity,

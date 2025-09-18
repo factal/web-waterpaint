@@ -10,6 +10,7 @@ type BrushSettings = {
   flow: number
   type: BrushType
   color: [number, number, number]
+  dryness: number
 }
 
 type WatercolorViewportProps = {
@@ -159,6 +160,7 @@ const WatercolorViewport = ({
           flow: scaledFlow,
           type: brushState.type,
           color,
+          dryness: brushState.dryness,
         })
 
         const areaFactor = (scaledRadius / size) ** 2

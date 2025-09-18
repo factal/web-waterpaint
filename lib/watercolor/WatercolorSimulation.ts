@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 import { createMaterials, createVelocityMaxMaterial } from './materials'
-import { createFiberField, createPingPong, createRenderTarget } from './targets'
+import { createFiberField, createPaperHeight, createPingPong, createRenderTarget } from './targets'
 import {
   DEFAULT_BINDER_PARAMS,
   DEFAULT_DT,
@@ -45,6 +45,7 @@ export default class WatercolorSimulation {
   private readonly quad: THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial>
   private readonly materials: MaterialMap
   private readonly fiberTexture: THREE.DataTexture
+  private readonly paperHeightTexture: THREE.DataTexture
   private readonly lbmTargets: [PingPongTarget, PingPongTarget, PingPongTarget]
   private readonly velocityReductionTargets: THREE.WebGLRenderTarget[]
   private readonly velocityMaxMaterial: THREE.RawShaderMaterial
@@ -79,11 +80,12 @@ export default class WatercolorSimulation {
     this.forceTarget = createRenderTarget(size, textureType)
     this.compositeTarget = createRenderTarget(size, textureType)
     this.fiberTexture = createFiberField(size)
+    this.paperHeightTexture = createPaperHeight(size)
 
     this.scene = new THREE.Scene()
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
-    this.materials = createMaterials(this.texelSize, this.fiberTexture)
+    this.materials = createMaterials(this.texelSize, this.fiberTexture, this.paperHeightTexture)
     this.lbmTargets = [this.targets.F0, this.targets.F1, this.targets.F2]
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.materials.zero)
@@ -102,8 +104,9 @@ export default class WatercolorSimulation {
 
   // Inject water or pigment into the simulation at a given position.
   splat(brush: BrushSettings) {
-    const { center, radius, flow, type, color } = brush
+    const { center, radius, flow, type, color, dryness } = brush
     const toolType = type === 'water' ? 0 : 1
+    const dryThreshold = THREE.MathUtils.clamp(dryness, 0, 1)
 
     this.runLbmTriplet(this.materials.lbmSplat, (material) => {
       const uniforms = material.uniforms as Record<string, THREE.IUniform>
@@ -122,6 +125,7 @@ export default class WatercolorSimulation {
     splatPigment.uniforms.uFlow.value = flow
     splatPigment.uniforms.uToolType.value = toolType
     splatPigment.uniforms.uPigment.value.set(color[0], color[1], color[2])
+    splatPigment.uniforms.uDryThreshold.value = dryThreshold
     this.renderToTarget(splatPigment, this.targets.C.write)
     this.targets.C.swap()
 
@@ -132,6 +136,7 @@ export default class WatercolorSimulation {
     splatBinder.uniforms.uFlow.value = flow
     splatBinder.uniforms.uToolType.value = toolType
     splatBinder.uniforms.uBinderStrength.value = this.binderSettings.injection
+    splatBinder.uniforms.uDryThreshold.value = dryThreshold
     this.renderToTarget(splatBinder, this.targets.B.write)
     this.targets.B.swap()
 
@@ -413,6 +418,7 @@ export default class WatercolorSimulation {
     this.velocityMaxMaterial.dispose()
     this.clearTargets()
     this.fiberTexture.dispose()
+    this.paperHeightTexture.dispose()
     this.velocityReductionTargets.forEach((target) => target.dispose())
   }
 

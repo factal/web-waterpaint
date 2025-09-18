@@ -63,7 +63,11 @@ function createTriplet(
   return fragments.map((fragment) => createMaterial(fragment, uniforms())) as MaterialTriplet
 }
 
-export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.DataTexture): MaterialMap {
+export function createMaterials(
+  texelSize: THREE.Vector2,
+  fiberTexture: THREE.DataTexture,
+  paperHeightTexture: THREE.DataTexture,
+): MaterialMap {
   const centerUniform = () => ({ value: new THREE.Vector2(0, 0) })
   const pigmentUniform = () => ({ value: new THREE.Vector3(0, 0, 0) })
 
@@ -76,6 +80,8 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uPigment: pigmentUniform(),
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0 },
   })
 
   const splatBinder = createMaterial(SPLAT_BINDER_FRAGMENT, {
@@ -85,6 +91,8 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uBinderStrength: { value: DEFAULT_BINDER_PARAMS.injection },
+    uPaperHeight: { value: paperHeightTexture },
+    uDryThreshold: { value: 0 },
   })
 
   const advectPigment = createMaterial(ADVECT_PIGMENT_FRAGMENT, {

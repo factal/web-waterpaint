@@ -52,6 +52,22 @@ export default function Home() {
     flow: { label: 'Flow', value: 0.45, min: 0, max: 1, step: 0.01 },
   })
 
+  const mediumControls = useControls('Brush Medium', {
+    binderCharge: {
+      label: 'Binder Charge',
+      value: DEFAULT_BINDER_PARAMS.injection,
+      min: 0,
+      max: 2,
+      step: 0.01,
+    },
+    waterLoad: {
+      label: 'Water Load',
+      value: 0.8,
+      min: 0.1,
+      max: 2,
+      step: 0.01,
+    },
+  })
   const dryingControls = useControls('Drying & Deposits', {
     evap: { label: 'Evaporation', value: 0.02, min: 0, max: 1, step: 0.001 },
     absorb: { label: 'Absorption', value: 0.25, min: 0, max: 2, step: 0.001 },
@@ -67,13 +83,6 @@ export default function Home() {
   })
 
   const binderControls = useControls('Binder Dynamics', {
-    injection: {
-      label: 'Binder Charge',
-      value: DEFAULT_BINDER_PARAMS.injection,
-      min: 0,
-      max: 2,
-      step: 0.01,
-    },
     diffusion: {
       label: 'Diffusion',
       value: DEFAULT_BINDER_PARAMS.diffusion,
@@ -113,7 +122,6 @@ export default function Home() {
 
   const reservoirControls = useControls('Brush Reservoir', {
     waterCapacityWater: { label: 'Water Brush Capacity', value: 1.4, min: 0.1, max: 2.5, step: 0.05 },
-    waterCapacityPigment: { label: 'Pigment Brush Water Cap', value: 0.8, min: 0.1, max: 2, step: 0.05 },
     pigmentCapacity: { label: 'Pigment Charge', value: 1.1, min: 0.1, max: 2, step: 0.05 },
     waterConsumption: { label: 'Water Consumption', value: 0.28, min: 0.01, max: 1, step: 0.01 },
     pigmentConsumption: { label: 'Pigment Consumption', value: 0.22, min: 0.01, max: 1, step: 0.01 },
@@ -142,34 +150,31 @@ export default function Home() {
   const { evap, absorb, edge, backrunStrength } = dryingControls as { evap: number; absorb: number; edge: number; backrunStrength: number }
   const { grav, visc, cfl, maxSubsteps } = dynamicsControls as { grav: number; visc: number; cfl: number; maxSubsteps: number }
   const {
-    injection: binderInjection,
     diffusion: binderDiffusion,
     decay: binderDecay,
     elasticity: binderElasticity,
     viscosity: binderViscosity,
     buoyancy: binderBuoyancy,
   } = binderControls as {
-    injection: number
     diffusion: number
     decay: number
     elasticity: number
     viscosity: number
     buoyancy: number
   }
+  const { binderCharge, waterLoad } = mediumControls as { binderCharge: number; waterLoad: number }
   const { stateAbsorption, granulation, paperTextureStrength } = featureControls as {
     stateAbsorption: boolean
     granulation: boolean
     paperTextureStrength: number
   }
-  const { waterCapacityWater, waterCapacityPigment, pigmentCapacity, waterConsumption, pigmentConsumption, stampSpacing } = reservoirControls as {
+  const { waterCapacityWater, pigmentCapacity, waterConsumption, pigmentConsumption, stampSpacing } = reservoirControls as {
     waterCapacityWater: number;
-    waterCapacityPigment: number;
     pigmentCapacity: number;
     waterConsumption: number;
     pigmentConsumption: number;
     stampSpacing: number;
   }
-
   const pigmentIndex = tool === 'water' ? -1 : parseInt(tool.slice(-1), 10)
 
   const brush = useMemo(() => ({
@@ -195,7 +200,7 @@ export default function Home() {
     cfl,
     maxSubsteps,
     binder: {
-      injection: binderInjection,
+      injection: binderCharge,
       diffusion: binderDiffusion,
       decay: binderDecay,
       elasticity: binderElasticity,
@@ -204,7 +209,7 @@ export default function Home() {
     },
     reservoir: {
       waterCapacityWater,
-      waterCapacityPigment,
+      waterCapacityPigment: waterLoad,
       pigmentCapacity,
       waterConsumption,
       pigmentConsumption,
@@ -222,14 +227,14 @@ export default function Home() {
     paperTextureStrength,
     cfl,
     maxSubsteps,
-    binderInjection,
+    binderCharge,
     binderDiffusion,
     binderDecay,
     binderElasticity,
     binderViscosity,
     binderBuoyancy,
     waterCapacityWater,
-    waterCapacityPigment,
+    waterLoad,
     pigmentCapacity,
     waterConsumption,
     pigmentConsumption,
@@ -268,3 +273,4 @@ export default function Home() {
     </main>
   )
 }
+

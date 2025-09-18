@@ -542,24 +542,6 @@ export default class WatercolorSimulation {
   }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 export type { BrushType, BrushSettings, SimulationParams, BinderParams } from './types'
 export {
   DEFAULT_BINDER_PARAMS,

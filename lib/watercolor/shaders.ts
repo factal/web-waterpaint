@@ -333,7 +333,7 @@ AbsorbResult computeAbsorb(vec2 uv) {
   res.settled = settledNew;
   return res;
 }
-`;
+`
 
 export const ABSORB_DEPOSIT_FRAGMENT = `
 ${ABSORB_COMMON}
@@ -341,7 +341,7 @@ void main() {
   AbsorbResult res = computeAbsorb(vUv);
   fragColor = vec4(res.dep, 1.0);
 }
-`;
+`
 
 export const ABSORB_HEIGHT_FRAGMENT = `
 ${ABSORB_COMMON}
@@ -349,7 +349,7 @@ void main() {
   AbsorbResult res = computeAbsorb(vUv);
   fragColor = vec4(res.newH, 0.0, 0.0, 1.0);
 }
-`;
+`
 
 export const ABSORB_PIGMENT_FRAGMENT = `
 ${ABSORB_COMMON}
@@ -357,7 +357,7 @@ void main() {
   AbsorbResult res = computeAbsorb(vUv);
   fragColor = vec4(res.pigment, 1.0);
 }
-`;
+`
 
 export const ABSORB_WET_FRAGMENT = `
 ${ABSORB_COMMON}
@@ -365,7 +365,7 @@ void main() {
   AbsorbResult res = computeAbsorb(vUv);
   fragColor = vec4(res.newWet, 0.0, 0.0, 1.0);
 }
-`;
+`
 
 export const ABSORB_SETTLED_FRAGMENT = `
 ${ABSORB_COMMON}
@@ -373,7 +373,7 @@ void main() {
   AbsorbResult res = computeAbsorb(vUv);
   fragColor = vec4(res.settled, 1.0);
 }
-`;
+`
 
 export const PRESSURE_DIVERGENCE_FRAGMENT = `
 precision highp float;
@@ -389,7 +389,7 @@ void main() {
   float divergence = 0.5 * ((right - left) + (top - bottom));
   fragColor = vec4(divergence, 0.0, 0.0, 1.0);
 }
-`;
+`
 
 export const PRESSURE_JACOBI_FRAGMENT = `
 precision highp float;
@@ -407,7 +407,7 @@ void main() {
   float pressure = (left + right + top + bottom - divergence) * 0.25;
   fragColor = vec4(pressure, 0.0, 0.0, 1.0);
 }
-`;
+`
 
 export const PRESSURE_PROJECT_FRAGMENT = `
 precision highp float;
@@ -426,7 +426,7 @@ void main() {
   vec2 projected = vel - gradient;
   fragColor = vec4(projected, 0.0, 1.0);
 }
-`;
+`
 
 export const PAPER_DIFFUSION_FRAGMENT = `
 precision highp float;
@@ -464,7 +464,7 @@ void main() {
   float newW = clamp(w + uDt * (diffusion + replenish), 0.0, 1.0);
   fragColor = vec4(newW, 0.0, 0.0, 1.0);
 }
-`;
+`
 
 export const COMPOSITE_FRAGMENT = `
 precision highp float;
@@ -494,7 +494,7 @@ void main() {
   vec3 col = clamp(R * uPaper, vec3(0.0), vec3(1.0));
   fragColor = vec4(col, 1.0);
 }
-`;
+`
 
 export const VELOCITY_MAX_FRAGMENT = `
 precision highp float;
@@ -517,4 +517,4 @@ void main() {
   m = max(m, velocityMag(vUv + vec2(halfStep.x, halfStep.y)));
   fragColor = vec4(m, 0.0, 0.0, 1.0);
 }
-`;
+`

@@ -116,6 +116,7 @@ export default class WatercolorSimulation {
       binderBoost = 1,
       pigmentBoost = 1,
       depositBoost,
+      mask,
     } = brush
     const toolType = type === 'water' ? 0 : 1
 
@@ -144,11 +145,39 @@ export default class WatercolorSimulation {
       this.materials.splatDeposit,
     ]
 
-    splatMaterials.forEach((material) => {
+    const rewetMaterials = [
+      this.materials.splatRewetPigment,
+      this.materials.splatRewetDeposit,
+    ]
+
+    const allSplatMaterials = [...splatMaterials, ...rewetMaterials]
+
+    const defaultMaskTexture =
+      (this.materials.splatHeight.uniforms.uBristleMask.value as THREE.Texture | null) ??
+      null
+    const maskTexture = (mask?.texture as THREE.Texture | null) ?? defaultMaskTexture
+    const maskRotation = mask?.rotation ?? 0
+    const maskStrength = THREE.MathUtils.clamp(mask?.strength ?? 0, 0, 1)
+    const maskScale = mask?.scale ?? [1, 1]
+
+    allSplatMaterials.forEach((material) => {
       const uniforms = material.uniforms as Record<string, THREE.IUniform>
       uniforms.uPaperHeight.value = this.paperHeightMap
       uniforms.uDryThreshold.value = threshold
       uniforms.uDryInfluence.value = dryInfluence
+      if (uniforms.uBristleMask) {
+        uniforms.uBristleMask.value = maskTexture
+      }
+      if (uniforms.uMaskScale) {
+        const scaleUniform = uniforms.uMaskScale.value as THREE.Vector2
+        scaleUniform.set(maskScale[0], maskScale[1])
+      }
+      if (uniforms.uMaskRotation) {
+        uniforms.uMaskRotation.value = maskRotation
+      }
+      if (uniforms.uMaskStrength) {
+        uniforms.uMaskStrength.value = maskStrength
+      }
     })
 
     const splatHeight = this.materials.splatHeight

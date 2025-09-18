@@ -2,6 +2,13 @@ import * as THREE from 'three'
 
 export type BrushType = 'water' | 'pigment'
 
+export interface BrushMaskParams {
+  texture: THREE.Texture | null
+  scale: [number, number]
+  rotation: number
+  strength: number
+}
+
 export interface BrushSettings {
   center: [number, number]
   radius: number
@@ -14,6 +21,7 @@ export interface BrushSettings {
   binderBoost?: number
   pigmentBoost?: number
   depositBoost?: number
+  mask?: BrushMaskParams
 }
 
 export type ChannelCoefficients = [number, number, number]

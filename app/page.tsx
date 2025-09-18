@@ -1,8 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Leva, button, useControls } from 'leva'
-import WatercolorViewport from '@/components/watercolor/WatercolorViewport'
+import WatercolorViewport, { type ViewportBrush } from '@/components/watercolor/WatercolorViewport'
+import * as THREE from 'three'
 import {
   DEFAULT_ABSORB_EXPONENT,
   DEFAULT_ABSORB_MIN_FLUX,
@@ -16,6 +17,104 @@ import {
 type Tool = 'water' | 'pigment0' | 'pigment1' | 'pigment2'
 
 const SIM_SIZE = 512
+
+type BrushMaskId = 'round' | 'flat' | 'fan'
+
+type BrushMaskAsset = {
+  texture: THREE.DataTexture
+  scale: [number, number]
+  baseStrength: number
+  pressureScale: number
+  rotationJitter: number
+}
+
+const BRUSH_MASK_OPTIONS: Record<string, BrushMaskId> = {
+  'Soft Round': 'round',
+  'Flat Streak': 'flat',
+  'Fan Mop': 'fan',
+}
+
+const fract = (value: number) => value - Math.floor(value)
+
+function createMaskTexture(variant: BrushMaskId, density: number): THREE.DataTexture {
+  const size = 256
+  const data = new Uint8Array(size * size * 4)
+  const stripeFreq = THREE.MathUtils.lerp(6, 32, density)
+  const swirl = THREE.MathUtils.lerp(0.25, 1.1, density)
+
+  for (let y = 0; y < size; y += 1) {
+    const v = (y / (size - 1)) * 2 - 1
+    for (let x = 0; x < size; x += 1) {
+      const u = (x / (size - 1)) * 2 - 1
+      const idx = (y * size + x) * 4
+      const radiusSq = u * u + v * v
+      const gaussian = Math.exp(-1.35 * radiusSq)
+
+      let pattern = 1
+      if (variant === 'round') {
+        const rings = Math.exp(-0.9 * Math.pow(Math.max(radiusSq - 0.25, 0), 1.4))
+        const wobble = 0.9 + 0.1 * Math.cos((u + v) * (4 + density * 6))
+        pattern = rings * wobble
+      } else if (variant === 'flat') {
+        const taper = Math.exp(-1.1 * Math.pow(Math.abs(v) * 1.2, 1.8))
+        const stripes = 0.55 + 0.45 * Math.cos(u * stripeFreq + Math.sin(v * 5) * 0.6)
+        pattern = taper * stripes
+      } else {
+        const angle = Math.atan2(v, u)
+        const spokes = 0.6 + 0.4 * Math.cos(angle * (stripeFreq * 0.45) + v * swirl)
+        const fan = Math.exp(-0.6 * Math.pow(Math.max(radiusSq - 0.1, 0), 1.5))
+        pattern = spokes * fan
+      }
+
+      const random = fract(Math.sin((x + 11.1) * 12.9898 + (y + 78.233) * 0.875) * 43758.5453)
+      const noise = 0.88 + 0.12 * random
+      const mixAmount = variant === 'round' ? 0.35 : 0.85
+      const mixedPattern = 1 + (pattern - 1) * mixAmount
+      const value = Math.max(0, Math.min(1, gaussian * mixedPattern * noise))
+      const byte = Math.round(value * 255)
+
+      data[idx] = byte
+      data[idx + 1] = byte
+      data[idx + 2] = byte
+      data[idx + 3] = 255
+    }
+  }
+
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat)
+  texture.name = `${variant}-brush-mask`
+  texture.needsUpdate = true
+  texture.wrapS = THREE.ClampToEdgeWrapping
+  texture.wrapT = THREE.ClampToEdgeWrapping
+  texture.magFilter = THREE.LinearFilter
+  texture.minFilter = THREE.LinearFilter
+  return texture
+}
+
+function createBrushMaskAssets(density: number): Record<BrushMaskId, BrushMaskAsset> {
+  return {
+    round: {
+      texture: createMaskTexture('round', density * 0.5 + 0.25),
+      scale: [1, 1],
+      baseStrength: 0.55,
+      pressureScale: 0.15,
+      rotationJitter: 0.1,
+    },
+    flat: {
+      texture: createMaskTexture('flat', density),
+      scale: [1.6, 0.85],
+      baseStrength: 1,
+      pressureScale: 0.45,
+      rotationJitter: 0.2,
+    },
+    fan: {
+      texture: createMaskTexture('fan', density * 0.75 + 0.1),
+      scale: [1.25, 1.05],
+      baseStrength: 0.85,
+      pressureScale: 0.3,
+      rotationJitter: 0.35,
+    },
+  }
+}
 
 const PIGMENT_MASS: Array<[number, number, number]> = [
   [1, 0, 0],
@@ -50,6 +149,13 @@ export default function Home() {
     },
     radius: { label: 'Radius', value: 18, min: 2, max: 60, step: 1 },
     flow: { label: 'Flow', value: 0.45, min: 0, max: 1, step: 0.01 },
+    mask: {
+      label: 'Bristle Mask',
+      value: 'round' as BrushMaskId,
+      options: BRUSH_MASK_OPTIONS,
+    },
+    maskStrength: { label: 'Mask Strength', value: 0.75, min: 0, max: 1, step: 0.01 },
+    streakDensity: { label: 'Streak Density', value: 0.55, min: 0, max: 1, step: 0.01 },
   })
 
   const mediumControls = useControls('Brush Medium', {
@@ -152,6 +258,9 @@ export default function Home() {
   const tool = brushControls.tool as Tool
   const radius = brushControls.radius as number
   const flow = brushControls.flow as number
+  const maskId = brushControls.mask as BrushMaskId
+  const maskStrength = brushControls.maskStrength as number
+  const streakDensity = brushControls.streakDensity as number
   const { evap, absorb, edge, backrunStrength } = dryingControls as { evap: number; absorb: number; edge: number; backrunStrength: number }
   const { grav, visc, cfl, maxSubsteps } = dynamicsControls as { grav: number; visc: number; cfl: number; maxSubsteps: number }
   const {
@@ -187,15 +296,46 @@ export default function Home() {
   }
   const pigmentIndex = tool === 'water' ? -1 : parseInt(tool.slice(-1), 10)
 
-  const brush = useMemo(() => ({
-    radius,
-    flow,
-    type: toolToBrushType(tool),
-    color: pigmentIndex >= 0 ? PIGMENT_MASS[pigmentIndex] : ([0, 0, 0] as [number, number, number]),
-    pasteMode,
-    binderBoost: pasteBinderBoost,
-    pigmentBoost: pastePigmentBoost,
-  }), [radius, flow, tool, pigmentIndex, pasteMode, pasteBinderBoost, pastePigmentBoost])
+  const maskAssets = useMemo(() => createBrushMaskAssets(streakDensity), [streakDensity])
+
+  useEffect(
+    () => () => {
+      Object.values(maskAssets).forEach((asset) => asset.texture.dispose())
+    },
+    [maskAssets],
+  )
+
+  const activeMask = maskAssets[maskId] ?? maskAssets.round
+
+  const brush = useMemo<ViewportBrush>(
+    () => ({
+      radius,
+      flow,
+      type: toolToBrushType(tool),
+      color: pigmentIndex >= 0 ? PIGMENT_MASS[pigmentIndex] : ([0, 0, 0] as [number, number, number]),
+      pasteMode,
+      binderBoost: pasteBinderBoost,
+      pigmentBoost: pastePigmentBoost,
+      mask: {
+        texture: activeMask.texture,
+        scale: activeMask.scale,
+        strength: Math.min(1, maskStrength * activeMask.baseStrength),
+        pressureScale: activeMask.pressureScale,
+        rotationJitter: activeMask.rotationJitter,
+      },
+    }),
+    [
+      radius,
+      flow,
+      tool,
+      pigmentIndex,
+      pasteMode,
+      pasteBinderBoost,
+      pastePigmentBoost,
+      activeMask,
+      maskStrength,
+    ],
+  )
 
   const params = useMemo<SimulationParams>(() => ({
     grav,

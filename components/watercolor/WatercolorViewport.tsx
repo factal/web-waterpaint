@@ -4,8 +4,17 @@ import { useCallback, useEffect, useRef } from 'react'
 import View from '@/components/canvas/View'
 import WatercolorScene from './WatercolorScene'
 import WatercolorSimulation, { type BrushType, type SimulationParams } from '@/lib/watercolor/WatercolorSimulation'
+import type { Texture } from 'three'
 
-type BrushSettings = {
+type BrushMaskSettings = {
+  texture: Texture
+  scale: [number, number]
+  strength: number
+  pressureScale?: number
+  rotationJitter?: number
+}
+
+export type ViewportBrush = {
   radius: number
   flow: number
   type: BrushType
@@ -13,11 +22,12 @@ type BrushSettings = {
   pasteMode?: boolean
   binderBoost?: number
   pigmentBoost?: number
+  mask: BrushMaskSettings
 }
 
 type WatercolorViewportProps = {
   params: SimulationParams
-  brush: BrushSettings
+  brush: ViewportBrush
   size?: number
   clearSignal: number
   className?: string
@@ -35,6 +45,7 @@ type Reservoir = {
   lastStamp: [number, number] | null
   lastPos: [number, number] | null
   distanceSinceStamp: number
+  lastAngle: number
 }
 
 // WatercolorViewport hosts the interactive canvas and bridges pointer input to the simulation.
@@ -94,6 +105,7 @@ const WatercolorViewport = ({
           lastStamp: null,
           lastPos: null,
           distanceSinceStamp: stampSpacing,
+          lastAngle: 0,
         }
       }
 
@@ -105,6 +117,7 @@ const WatercolorViewport = ({
         lastStamp: null,
         lastPos: null,
         distanceSinceStamp: stampSpacing,
+        lastAngle: 0,
       }
     }
 
@@ -155,6 +168,22 @@ const WatercolorViewport = ({
         const dryness = pasteActive ? Math.max(baseDryness, 0.92) : baseDryness
         const dryThreshold = lowSolvent > 0 ? 0.82 : undefined
 
+        const maskSettings = brushState.mask
+        const wetness = Math.max(0, Math.min(1, waterRatio))
+        const heading = segmentLength > 1e-5 ? Math.atan2(dy, dx) : reservoir.lastAngle
+        reservoir.lastAngle = heading
+        const jitter = (Math.random() - 0.5) * (maskSettings.rotationJitter ?? 0)
+        const rotation = heading + jitter
+        const pressureFactor = 1 + (maskSettings.pressureScale ?? 0) * (1 - wetness)
+        const maskScale: [number, number] = [
+          maskSettings.scale[0] * pressureFactor,
+          maskSettings.scale[1] * pressureFactor,
+        ]
+        const maskStrength = Math.min(
+          1,
+          maskSettings.strength * (0.65 + 0.35 * (1 - wetness)),
+        )
+
         const color: [number, number, number] = brushState.type === 'pigment'
           ? [
               brushState.color[0] * pigmentRatio,
@@ -174,6 +203,12 @@ const WatercolorViewport = ({
           lowSolvent,
           binderBoost: brushState.binderBoost,
           pigmentBoost: brushState.pigmentBoost,
+          mask: {
+            texture: maskSettings.texture,
+            rotation,
+            scale: maskScale,
+            strength: maskStrength,
+          },
         })
 
         const areaFactor = (scaledRadius / size) ** 2

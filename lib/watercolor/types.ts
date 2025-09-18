@@ -61,6 +61,8 @@ export type MaterialMap = {
   splatVelocity: THREE.RawShaderMaterial
   splatPigment: THREE.RawShaderMaterial
   splatBinder: THREE.RawShaderMaterial
+  splatRewetPigment: THREE.RawShaderMaterial
+  splatRewetDeposit: THREE.RawShaderMaterial
   advectVelocity: THREE.RawShaderMaterial
   advectHeight: THREE.RawShaderMaterial
   advectPigment: THREE.RawShaderMaterial

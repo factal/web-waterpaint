@@ -72,6 +72,8 @@ const vec2 C5 = vec2(1.0, 1.0);
 const vec2 C6 = vec2(-1.0, 1.0);
 const vec2 C7 = vec2(-1.0, -1.0);
 const vec2 C8 = vec2(1.0, -1.0);
+const float MIN_RHO = 1e-6;
+const float DRY_THRESHOLD = 1e-3;
 
 float computeEq(float weight, float rho, float dotCU, float uSq) {
   return weight * rho * (1.0 + 3.0 * dotCU + 4.5 * dotCU * dotCU - 1.5 * uSq);
@@ -108,7 +110,7 @@ void main() {
   float f6 = data1.z;
   float f7 = data1.w;
   float f8 = data2.x;
-  float rho = max(f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8, 1e-6);
+  float rho = max(f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8, MIN_RHO);
   vec2 momentum = vec2(
     f1 - f3 + f5 - f6 - f7 + f8,
     f2 - f4 + f5 + f6 - f7 - f8
@@ -120,7 +122,7 @@ void main() {
   float r = max(uRadius, 1e-6);
   float fall = exp(-9.0 * dot(delta, delta) / (r * r + 1e-6));
   float waterMul = mix(1.0, 0.7, step(0.5, uToolType));
-  rho = max(rho + waterMul * uFlow * fall, 1e-6);
+  rho = max(rho + waterMul * uFlow * fall, MIN_RHO);
   float dist = length(delta);
   if (dist > 1e-6) {
     vec2 dir = delta / dist;
@@ -173,6 +175,7 @@ uniform float uViscosity;
 uniform float uBinderElasticity;
 uniform float uBinderViscosity;
 uniform float uBinderBuoyancy;
+const float DRY_THRESHOLD = 1e-3;
 void main() {
   vec2 texel = uTexel;
   float hL = texture(uHeight, vUv - vec2(texel.x, 0.0)).r;
@@ -194,11 +197,9 @@ void main() {
   force -= clamp(uViscosity, 0.0, 4.0) * vel;
   force -= uBinderViscosity * bC * vel;
   force.y += uBinderBuoyancy * bC;
-  float rawFilm = max(hC, 0.0);
-  float thinFilm = clamp(rawFilm, 0.0, 1.0);
-  const float densityThreshold = 1e-3;
-  float filmMask = step(densityThreshold, rawFilm);
-  force *= mix(0.3, 1.0, thinFilm) * thinFilm * filmMask;
+  float thinFilm = clamp(hC, 0.0, 1.0);
+  float wetMask = step(DRY_THRESHOLD, hC);
+  force *= wetMask * mix(0.3, 1.0, thinFilm);
   fragColor = vec4(force, 0.0, 1.0);
 }
 `
@@ -228,69 +229,58 @@ void main() {
   float f6 = data1.z;
   float f7 = data1.w;
   float f8 = data2.x;
-  float rawRho = f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8;
-  float rho = max(rawRho, 1e-6);
-  const float densityThreshold = 1e-3;
+  float rho = max(f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8, 0.0);
   vec2 force = texture(uForce, vUv).xy;
   vec2 momentum = vec2(
     f1 - f3 + f5 - f6 - f7 + f8,
     f2 - f4 + f5 + f6 - f7 - f8
   );
-  if (rawRho < densityThreshold) {
-    f0 = 0.0;
-    f1 = 0.0;
-    f2 = 0.0;
-    f3 = 0.0;
-    f4 = 0.0;
-    f5 = 0.0;
-    f6 = 0.0;
-    f7 = 0.0;
-    f8 = 0.0;
-  } else {
-    vec2 vel = momentum / rho;
-    vec2 accel = force * uDt / rho;
-    vel += 0.5 * accel;
-    float uSq = dot(vel, vel);
-    float dot1 = dot(C1, vel);
-    float dot2 = dot(C2, vel);
-    float dot3 = dot(C3, vel);
-    float dot4 = dot(C4, vel);
-    float dot5 = dot(C5, vel);
-    float dot6 = dot(C6, vel);
-    float dot7 = dot(C7, vel);
-    float dot8 = dot(C8, vel);
-    float eq0 = computeEq(W0, rho, 0.0, uSq);
-    float eq1 = computeEq(W_AXIS, rho, dot1, uSq);
-    float eq2 = computeEq(W_AXIS, rho, dot2, uSq);
-    float eq3 = computeEq(W_AXIS, rho, dot3, uSq);
-    float eq4 = computeEq(W_AXIS, rho, dot4, uSq);
-    float eq5 = computeEq(W_DIAG, rho, dot5, uSq);
-    float eq6 = computeEq(W_DIAG, rho, dot6, uSq);
-    float eq7 = computeEq(W_DIAG, rho, dot7, uSq);
-    float eq8 = computeEq(W_DIAG, rho, dot8, uSq);
-    float tau = max(0.51, 0.5 + 3.0 * max(uVisc, 0.0));
-    float omega = 1.0 / tau;
-    float forceScale = (1.0 - 0.5 * omega) * uDt;
-    float uDotF = dot(vel, force);
-    float force0 = W0 * forceScale * (-3.0 * uDotF);
-    float force1 = W_AXIS * forceScale * (3.0 * dot(C1, force) + 9.0 * dot1 * dot(C1, force) - 3.0 * uDotF);
-    float force2 = W_AXIS * forceScale * (3.0 * dot(C2, force) + 9.0 * dot2 * dot(C2, force) - 3.0 * uDotF);
-    float force3 = W_AXIS * forceScale * (3.0 * dot(C3, force) + 9.0 * dot3 * dot(C3, force) - 3.0 * uDotF);
-    float force4 = W_AXIS * forceScale * (3.0 * dot(C4, force) + 9.0 * dot4 * dot(C4, force) - 3.0 * uDotF);
-    float force5 = W_DIAG * forceScale * (3.0 * dot(C5, force) + 9.0 * dot5 * dot(C5, force) - 3.0 * uDotF);
-    float force6 = W_DIAG * forceScale * (3.0 * dot(C6, force) + 9.0 * dot6 * dot(C6, force) - 3.0 * uDotF);
-    float force7 = W_DIAG * forceScale * (3.0 * dot(C7, force) + 9.0 * dot7 * dot(C7, force) - 3.0 * uDotF);
-    float force8 = W_DIAG * forceScale * (3.0 * dot(C8, force) + 9.0 * dot8 * dot(C8, force) - 3.0 * uDotF);
-    f0 += omega * (eq0 - f0) + force0;
-    f1 += omega * (eq1 - f1) + force1;
-    f2 += omega * (eq2 - f2) + force2;
-    f3 += omega * (eq3 - f3) + force3;
-    f4 += omega * (eq4 - f4) + force4;
-    f5 += omega * (eq5 - f5) + force5;
-    f6 += omega * (eq6 - f6) + force6;
-    f7 += omega * (eq7 - f7) + force7;
-    f8 += omega * (eq8 - f8) + force8;
-  }
+  float fluidMask = step(DRY_THRESHOLD, rho);
+  float invRho = fluidMask > 0.0 ? 1.0 / max(rho, MIN_RHO) : 0.0;
+  vec2 vel = momentum * invRho;
+  vec2 appliedForce = force * fluidMask;
+  vec2 accel = appliedForce * uDt * invRho;
+  vel += 0.5 * accel;
+  float uSq = dot(vel, vel);
+  float dot1 = dot(C1, vel);
+  float dot2 = dot(C2, vel);
+  float dot3 = dot(C3, vel);
+  float dot4 = dot(C4, vel);
+  float dot5 = dot(C5, vel);
+  float dot6 = dot(C6, vel);
+  float dot7 = dot(C7, vel);
+  float dot8 = dot(C8, vel);
+  float eq0 = computeEq(W0, rho, 0.0, uSq);
+  float eq1 = computeEq(W_AXIS, rho, dot1, uSq);
+  float eq2 = computeEq(W_AXIS, rho, dot2, uSq);
+  float eq3 = computeEq(W_AXIS, rho, dot3, uSq);
+  float eq4 = computeEq(W_AXIS, rho, dot4, uSq);
+  float eq5 = computeEq(W_DIAG, rho, dot5, uSq);
+  float eq6 = computeEq(W_DIAG, rho, dot6, uSq);
+  float eq7 = computeEq(W_DIAG, rho, dot7, uSq);
+  float eq8 = computeEq(W_DIAG, rho, dot8, uSq);
+  float tau = max(0.51, 0.5 + 3.0 * max(uVisc, 0.0));
+  float omega = 1.0 / tau;
+  float forceScale = (1.0 - 0.5 * omega) * uDt;
+  float uDotF = dot(vel, appliedForce);
+  float force0 = W0 * forceScale * (-3.0 * uDotF);
+  float force1 = W_AXIS * forceScale * (3.0 * dot(C1, appliedForce) + 9.0 * dot1 * dot(C1, appliedForce) - 3.0 * uDotF);
+  float force2 = W_AXIS * forceScale * (3.0 * dot(C2, appliedForce) + 9.0 * dot2 * dot(C2, appliedForce) - 3.0 * uDotF);
+  float force3 = W_AXIS * forceScale * (3.0 * dot(C3, appliedForce) + 9.0 * dot3 * dot(C3, appliedForce) - 3.0 * uDotF);
+  float force4 = W_AXIS * forceScale * (3.0 * dot(C4, appliedForce) + 9.0 * dot4 * dot(C4, appliedForce) - 3.0 * uDotF);
+  float force5 = W_DIAG * forceScale * (3.0 * dot(C5, appliedForce) + 9.0 * dot5 * dot(C5, appliedForce) - 3.0 * uDotF);
+  float force6 = W_DIAG * forceScale * (3.0 * dot(C6, appliedForce) + 9.0 * dot6 * dot(C6, appliedForce) - 3.0 * uDotF);
+  float force7 = W_DIAG * forceScale * (3.0 * dot(C7, appliedForce) + 9.0 * dot7 * dot(C7, appliedForce) - 3.0 * uDotF);
+  float force8 = W_DIAG * forceScale * (3.0 * dot(C8, appliedForce) + 9.0 * dot8 * dot(C8, appliedForce) - 3.0 * uDotF);
+  f0 += omega * (eq0 - f0) + force0;
+  f1 += omega * (eq1 - f1) + force1;
+  f2 += omega * (eq2 - f2) + force2;
+  f3 += omega * (eq3 - f3) + force3;
+  f4 += omega * (eq4 - f4) + force4;
+  f5 += omega * (eq5 - f5) + force5;
+  f6 += omega * (eq6 - f6) + force6;
+  f7 += omega * (eq7 - f7) + force7;
+  f8 += omega * (eq8 - f8) + force8;
   f0 = max(f0, 0.0);
   f1 = max(f1, 0.0);
   f2 = max(f2, 0.0);
@@ -385,9 +375,9 @@ void main() {
   float f6 = data1.z;
   float f7 = data1.w;
   float f8 = data2.x;
-  float rhoOld = texture(uState, vUv).z;
+  float rhoOld = max(texture(uState, vUv).z, 0.0);
   float rhoNew = max(texture(uNewDensity, vUv).r, 0.0);
-  if (rhoNew <= 1e-6) {
+  if (rhoNew <= MIN_RHO) {
     f0 = 0.0;
     f1 = 0.0;
     f2 = 0.0;
@@ -397,7 +387,7 @@ void main() {
     f6 = 0.0;
     f7 = 0.0;
     f8 = 0.0;
-  } else if (rhoOld <= 1e-6) {
+  } else if (rhoOld <= DRY_THRESHOLD) {
     float uSq = 0.0;
     float eq0 = computeEq(W0, rhoNew, 0.0, uSq);
     float eqAxis = computeEq(W_AXIS, rhoNew, 0.0, uSq);
@@ -412,7 +402,7 @@ void main() {
     f7 = eqDiag;
     f8 = eqDiag;
   } else {
-    float scale = clamp(rhoNew / max(rhoOld, 1e-6), 0.0, 12.0);
+    float scale = clamp(rhoNew / max(rhoOld, MIN_RHO), 0.0, 12.0);
     f0 *= scale;
     f1 *= scale;
     f2 *= scale;
@@ -460,11 +450,12 @@ void main() {
   float f6 = data1.z;
   float f7 = data1.w;
   float f8 = data2.x;
-  float rho = max(f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8, 1e-6);
+  float rho = max(f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8, 0.0);
+  float invRho = rho > DRY_THRESHOLD ? 1.0 / max(rho, MIN_RHO) : 0.0;
   vec2 vel = vec2(
     f1 - f3 + f5 - f6 - f7 + f8,
     f2 - f4 + f5 + f6 - f7 - f8
-  ) / rho;
+  ) * invRho;
   fragColor = vec4(vel, rho, 1.0);
 }
 `

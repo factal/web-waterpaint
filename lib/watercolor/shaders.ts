@@ -25,10 +25,21 @@ uniform sampler2D uSource;
 uniform vec2 uCenter;
 uniform float uRadius;
 uniform float uFlow;
+uniform sampler2D uPaperHeight;
+uniform float uDryThreshold;
+uniform float uDryInfluence;
 float splatFalloff(vec2 uv, float radius) {
   vec2 delta = uv - uCenter;
   float r = max(radius, 1e-6);
   return exp(-9.0 * dot(delta, delta) / (r * r + 1e-6));
+}
+float paperDryGate(vec2 uv, float flow) {
+  float height = texture(uPaperHeight, uv).r;
+  float wetness = clamp(flow, 0.0, 1.0);
+  float dryMix = clamp(uDryInfluence, 0.0, 1.0);
+  float feather = mix(0.03, 0.18, 1.0 - wetness);
+  float ramp = smoothstep(uDryThreshold - feather, uDryThreshold + feather, height);
+  return mix(1.0, 1.0 - ramp, dryMix);
 }
 `
 
@@ -38,8 +49,9 @@ uniform float uToolType;
 void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
+  float gate = paperDryGate(vUv, uFlow);
   float waterMul = mix(1.0, 0.7, step(0.5, uToolType));
-  src.r += waterMul * uFlow * fall;
+  src.r += waterMul * uFlow * fall * gate;
   fragColor = vec4(src.r, 0.0, 0.0, 1.0);
 }
 `
@@ -50,9 +62,10 @@ void main() {
   vec4 src = texture(uSource, vUv);
   vec2 delta = vUv - uCenter;
   float fall = splatFalloff(vUv, uRadius);
+  float gate = paperDryGate(vUv, uFlow);
   float len = length(delta);
   vec2 dir = len > 1e-6 ? delta / len : vec2(0.0);
-  vec2 dv = dir * (0.7 * uFlow * fall);
+  vec2 dv = dir * (0.7 * uFlow * fall * gate);
   fragColor = vec4(src.xy + dv, 0.0, 1.0);
 }
 `
@@ -64,8 +77,9 @@ uniform vec3 uPigment;
 void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
+  float gate = paperDryGate(vUv, uFlow);
   float pigmentMask = step(0.5, uToolType);
-  vec3 add = uPigment * (uFlow * fall * pigmentMask);
+  vec3 add = uPigment * (uFlow * fall * pigmentMask * gate);
   fragColor = vec4(src.rgb + add, src.a);
 }
 `
@@ -77,8 +91,9 @@ uniform float uBinderStrength;
 void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
+  float gate = paperDryGate(vUv, uFlow);
   float mask = step(0.5, uToolType);
-  float add = uBinderStrength * uFlow * fall * mask;
+  float add = uBinderStrength * uFlow * fall * mask * gate;
   fragColor = vec4(src.r + add, 0.0, 0.0, 1.0);
 }
 `
@@ -181,7 +196,7 @@ in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uPigment;
 uniform vec2 uTexel;
-uniform float uDiffusion;
+uniform vec3 uDiffusion;
 uniform float uDt;
 
 vec3 sampleRGB(vec2 uv) {
@@ -197,7 +212,7 @@ void main() {
   vec3 bottom = sampleRGB(vUv - dv);
   vec3 top = sampleRGB(vUv + dv);
   vec3 laplacian = left + right + top + bottom - 4.0 * center.rgb;
-  vec3 diffused = center.rgb + uDiffusion * laplacian * uDt;
+  vec3 diffused = center.rgb + (uDiffusion * laplacian) * uDt;
   fragColor = vec4(max(diffused, vec3(0.0)), center.a);
 }
 `
@@ -272,6 +287,7 @@ uniform sampler2D uPigment;
 uniform sampler2D uWet;
 uniform sampler2D uDeposits;
 uniform sampler2D uSettled;
+uniform sampler2D uPaperHeight;
 uniform float uAbsorb;
 uniform float uEvap;
 uniform float uEdge;
@@ -281,9 +297,10 @@ uniform float uAbsorbTime;
 uniform float uAbsorbTimeOffset;
 uniform float uAbsorbFloor;
 uniform float uHumidity;
-uniform float uSettle;
+uniform vec3 uSettle;
 uniform float uGranStrength;
 uniform float uBackrunStrength;
+uniform float uPaperHeightStrength;
 uniform vec2 uTexel;
 
 struct AbsorbResult {
@@ -301,6 +318,7 @@ AbsorbResult computeAbsorb(vec2 uv) {
   float wet = texture(uWet, uv).r;
   vec3 dep = texture(uDeposits, uv).rgb;
   vec3 settled = texture(uSettled, uv).rgb;
+  float paperHeight = texture(uPaperHeight, uv).r;
 
   vec2 du = vec2(uTexel.x, 0.0);
   vec2 dv = vec2(0.0, uTexel.y);
@@ -332,7 +350,10 @@ AbsorbResult computeAbsorb(vec2 uv) {
     remRaw = 1.0;
   }
   float remFrac = clamp(min(1.0, remRaw), 0.0, 1.0);
-  float depFrac = clamp(remFrac * (0.5 + edgeBias) + uDepBase * edgeBias, 0.0, 1.0);
+  float valleyFactor = 1.0 + uPaperHeightStrength * (0.5 - paperHeight);
+  valleyFactor = clamp(valleyFactor, 0.1, 3.0);
+  float depBase = clamp(remFrac * (0.5 + edgeBias) + uDepBase * edgeBias, 0.0, 1.0);
+  float depFrac = clamp(depBase * valleyFactor, 0.0, 1.0);
   vec3 depAdd = pigment * depFrac;
   dep += depAdd;
   pigment = max(pigment - depAdd, vec3(0.0));
@@ -341,12 +362,14 @@ AbsorbResult computeAbsorb(vec2 uv) {
   dep += bloomDep;
   pigment = max(pigment - bloomDep, vec3(0.0));
 
-  float settleRate = clamp(uSettle, 0.0, 1.0);
+  float settleBase = clamp(uSettle, 0.0, 1.0);
+  float settleRate = clamp(settleBase * valleyFactor, 0.0, 1.0);
   vec3 settleAdd = pigment * settleRate;
   pigment = max(pigment - settleAdd, vec3(0.0));
   vec3 settledNew = settled + settleAdd;
 
-  float granCoeff = clamp(uGranStrength * edgeBias, 0.0, 1.0);
+  float granBase = clamp(uGranStrength * edgeBias, 0.0, 1.0);
+  float granCoeff = clamp(granBase * valleyFactor, 0.0, 1.0);
   vec3 granSource = pigment + settledNew;
   vec3 granDep = granSource * granCoeff;
   vec3 totalSource = max(granSource, vec3(1e-5));

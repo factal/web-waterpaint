@@ -20,6 +20,8 @@ export const DEFAULT_REWET_STRENGTH = 0.45
 // Staining pigments can opt out by setting their channel to zero.
 export const PIGMENT_REWET = new THREE.Vector3(0.75, 0.6, 0.0)
 
+export const DEFAULT_PAPER_TEXTURE_STRENGTH = 0.8
+
 export const PIGMENT_K = [
   new THREE.Vector3(1.6, 0.1, 0.1),
   new THREE.Vector3(0.1, 1.4, 0.15),

@@ -126,6 +126,23 @@ export default class WatercolorSimulation {
 
     this.binderSettings = { ...DEFAULT_BINDER_PARAMS }
 
+    this.activeSlot.fill(-1)
+    for (let i = SPH_MAX_PARTICLES - 1; i >= 0; i -= 1) {
+      this.freeList.push(i)
+      this.mass[i] = SPH_PARTICLE_MASS
+      this.density[i] = this.restDensity
+      this.infiltration[i] = ABSORPTION_MIN_LENGTH
+    }
+
+    this.gridCellSize = this.smoothingRadius
+    this.gridResolution = Math.max(1, Math.ceil(1 / this.gridCellSize))
+    this.gridHead = new Int32Array(this.gridResolution * this.gridResolution)
+    this.gridNext = new Int32Array(SPH_MAX_PARTICLES)
+
+    this.poly6Coeff = 4 / (Math.PI * Math.pow(this.smoothingRadius, 8))
+    this.spikyGradCoeff = -30 / (Math.PI * Math.pow(this.smoothingRadius, 5))
+    this.viscLaplacianCoeff = 40 / (Math.PI * Math.pow(this.smoothingRadius, 5))
+
     this.reset()
   }
 

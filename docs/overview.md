@@ -1,5 +1,6 @@
 # Watercolor Simulation Overview
 
+
 The watercolor engine now drives flow using a GPU-resident Lattice Boltzmann (LBM) solver. A D2Q9 BGK scheme evolves the fluid
 velocity field on a square lattice, while scalar fields for water height, pigment load, binder concentration, and paper wetness
 are advected and diffused on the same grid. Deposition and drying still follow the Lucas–Washburn model so the system preserves
@@ -82,7 +83,9 @@ UI controls map onto the simulation as follows:
 - **Pigment diffusion** – `PIGMENT_DIFFUSION_COEFF` is exposed in the code and can be tuned to adjust how quickly colours soften.
 - **Granulation** – The granulation toggle activates settled-pigment transfer and noise-based deposition boosts.
 
-## References
+
+## Module Layout
+
 
 - Qian, Y. H., d'Humières, D., Lallemand, P. “Lattice BGK Models for Navier–Stokes Equation.” *Europhysics Letters*, 1992.
 - Mi You et al. “Realistic Paint Simulation Based on Fluidity, Diffusion, and Absorption.” *Computer Animation and Virtual Worlds*, 2013.

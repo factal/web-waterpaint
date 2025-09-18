@@ -240,6 +240,7 @@ uniform sampler2D uPigment;
 uniform sampler2D uWet;
 uniform sampler2D uDeposits;
 uniform sampler2D uSettled;
+uniform sampler2D uPaperHeight;
 uniform float uAbsorb;
 uniform float uEvap;
 uniform float uEdge;
@@ -252,6 +253,7 @@ uniform float uHumidity;
 uniform float uSettle;
 uniform float uGranStrength;
 uniform float uBackrunStrength;
+uniform float uPaperHeightStrength;
 uniform vec2 uTexel;
 
 struct AbsorbResult {
@@ -269,6 +271,7 @@ AbsorbResult computeAbsorb(vec2 uv) {
   float wet = texture(uWet, uv).r;
   vec3 dep = texture(uDeposits, uv).rgb;
   vec3 settled = texture(uSettled, uv).rgb;
+  float paperHeight = texture(uPaperHeight, uv).r;
 
   vec2 du = vec2(uTexel.x, 0.0);
   vec2 dv = vec2(0.0, uTexel.y);
@@ -300,7 +303,10 @@ AbsorbResult computeAbsorb(vec2 uv) {
     remRaw = 1.0;
   }
   float remFrac = clamp(min(1.0, remRaw), 0.0, 1.0);
-  float depFrac = clamp(remFrac * (0.5 + edgeBias) + uDepBase * edgeBias, 0.0, 1.0);
+  float valleyFactor = 1.0 + uPaperHeightStrength * (0.5 - paperHeight);
+  valleyFactor = clamp(valleyFactor, 0.1, 3.0);
+  float depBase = clamp(remFrac * (0.5 + edgeBias) + uDepBase * edgeBias, 0.0, 1.0);
+  float depFrac = clamp(depBase * valleyFactor, 0.0, 1.0);
   vec3 depAdd = pigment * depFrac;
   dep += depAdd;
   pigment = max(pigment - depAdd, vec3(0.0));
@@ -309,12 +315,14 @@ AbsorbResult computeAbsorb(vec2 uv) {
   dep += bloomDep;
   pigment = max(pigment - bloomDep, vec3(0.0));
 
-  float settleRate = clamp(uSettle, 0.0, 1.0);
+  float settleBase = clamp(uSettle, 0.0, 1.0);
+  float settleRate = clamp(settleBase * valleyFactor, 0.0, 1.0);
   vec3 settleAdd = pigment * settleRate;
   pigment = max(pigment - settleAdd, vec3(0.0));
   vec3 settledNew = settled + settleAdd;
 
-  float granCoeff = clamp(uGranStrength * edgeBias, 0.0, 1.0);
+  float granBase = clamp(uGranStrength * edgeBias, 0.0, 1.0);
+  float granCoeff = clamp(granBase * valleyFactor, 0.0, 1.0);
   vec3 granSource = pigment + settledNew;
   vec3 granDep = granSource * granCoeff;
   vec3 totalSource = max(granSource, vec3(1e-5));

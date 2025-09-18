@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
 import { createMaterials, createVelocityMaxMaterial } from './materials'
-import { createFiberField, createPingPong, createRenderTarget } from './targets'
+import { createFiberField, createPaperHeightField, createPingPong, createRenderTarget } from './targets'
 import {
   DEFAULT_BINDER_PARAMS,
   DEFAULT_DT,
@@ -40,6 +40,7 @@ export default class WatercolorSimulation {
   private readonly quad: THREE.Mesh<THREE.PlaneGeometry, THREE.RawShaderMaterial>
   private readonly materials: MaterialMap
   private readonly fiberTexture: THREE.DataTexture
+  private readonly paperHeightTexture: THREE.DataTexture
   private readonly pressure: PingPongTarget
   private readonly divergence: THREE.WebGLRenderTarget
   private readonly pressureIterations = 20
@@ -74,11 +75,12 @@ export default class WatercolorSimulation {
     this.pressure = createPingPong(size, textureType)
     this.divergence = createRenderTarget(size, textureType)
     this.fiberTexture = createFiberField(size)
+    this.paperHeightTexture = createPaperHeightField(size)
 
     this.scene = new THREE.Scene()
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
-    this.materials = createMaterials(this.texelSize, this.fiberTexture)
+    this.materials = createMaterials(this.texelSize, this.fiberTexture, this.paperHeightTexture)
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.materials.zero)
     this.scene.add(this.quad)
@@ -151,6 +153,7 @@ export default class WatercolorSimulation {
       edge,
       stateAbsorption,
       granulation,
+      paperTextureStrength,
       backrunStrength,
       absorbExponent,
       absorbTimeOffset,
@@ -245,6 +248,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbDeposit, this.targets.DEP.write)
 
@@ -262,6 +266,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbHeight, this.targets.H.write)
 
@@ -279,6 +284,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbPigment, this.targets.C.write)
 
@@ -296,6 +302,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbWet, this.targets.W.write)
 
@@ -313,6 +320,7 @@ export default class WatercolorSimulation {
         absorbTime,
         timeOffset,
         absorbFloor,
+        paperTextureStrength,
       )
       this.renderToTarget(absorbSettled, this.targets.S.write)
 
@@ -393,6 +401,7 @@ export default class WatercolorSimulation {
     this.velocityMaxMaterial.dispose()
     this.clearTargets()
     this.fiberTexture.dispose()
+    this.paperHeightTexture.dispose()
     this.velocityReductionTargets.forEach((target) => target.dispose())
   }
 
@@ -451,6 +460,7 @@ export default class WatercolorSimulation {
     absorbTime: number,
     timeOffset: number,
     absorbFloor: number,
+    paperTextureStrength: number,
   ) {
     const uniforms = material.uniforms as Record<string, THREE.IUniform>
     uniforms.uHeight.value = this.targets.H.read.texture
@@ -470,6 +480,7 @@ export default class WatercolorSimulation {
     if (uniforms.uAbsorbTime) uniforms.uAbsorbTime.value = absorbTime
     if (uniforms.uAbsorbTimeOffset) uniforms.uAbsorbTimeOffset.value = timeOffset
     if (uniforms.uAbsorbFloor) uniforms.uAbsorbFloor.value = absorbFloor
+    if (uniforms.uPaperHeightStrength) uniforms.uPaperHeightStrength.value = paperTextureStrength
   }
 
   private createVelocityReductionTargets(size: number): THREE.WebGLRenderTarget[] {
@@ -548,4 +559,5 @@ export {
   DEFAULT_ABSORB_EXPONENT,
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_ABSORB_MIN_FLUX,
+  DEFAULT_PAPER_TEXTURE_STRENGTH,
 } from './constants'

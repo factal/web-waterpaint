@@ -57,7 +57,11 @@ function createMaterial(fragmentShader: string, uniforms: Record<string, THREE.I
   })
 }
 
-export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.DataTexture): MaterialMap {
+export function createMaterials(
+  texelSize: THREE.Vector2,
+  fiberTexture: THREE.DataTexture,
+  paperHeightTexture: THREE.DataTexture,
+): MaterialMap {
   const centerUniform = () => ({ value: new THREE.Vector2(0, 0) })
   const pigmentUniform = () => ({ value: new THREE.Vector3(0, 0, 0) })
 
@@ -150,6 +154,7 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uWet: { value: null },
     uDeposits: { value: null },
     uSettled: { value: null },
+    uPaperHeight: { value: paperHeightTexture },
     uAbsorb: { value: 0 },
     uEvap: { value: 0 },
     uEdge: { value: 0 },
@@ -162,6 +167,7 @@ export function createMaterials(texelSize: THREE.Vector2, fiberTexture: THREE.Da
     uSettle: { value: 0 },
     uGranStrength: { value: GRANULATION_STRENGTH },
     uBackrunStrength: { value: 0 },
+    uPaperHeightStrength: { value: 0 },
     uTexel: { value: texelSize.clone() },
   })
 

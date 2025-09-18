@@ -22,13 +22,25 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uSource;
+uniform sampler2D uPaperHeight;
 uniform vec2 uCenter;
 uniform float uRadius;
 uniform float uFlow;
+uniform float uDryThreshold;
 float splatFalloff(vec2 uv, float radius) {
   vec2 delta = uv - uCenter;
   float r = max(radius, 1e-6);
   return exp(-9.0 * dot(delta, delta) / (r * r + 1e-6));
+}
+float paperDryMask(vec2 uv) {
+  if (uDryThreshold <= 0.0) {
+    return 1.0;
+  }
+  float threshold = clamp(uDryThreshold, 0.0, 1.0);
+  float softness = mix(0.3, 0.1, threshold);
+  float upper = min(threshold + softness, 1.0);
+  float height = texture(uPaperHeight, uv).r;
+  return smoothstep(threshold, upper, height);
 }
 `
 
@@ -40,7 +52,8 @@ void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
   float pigmentMask = step(0.5, uToolType);
-  vec3 add = uPigment * (uFlow * fall * pigmentMask);
+  float dryMask = paperDryMask(vUv);
+  vec3 add = uPigment * (uFlow * fall * pigmentMask * dryMask);
   fragColor = vec4(src.rgb + add, src.a);
 }
 `
@@ -53,7 +66,8 @@ void main() {
   vec4 src = texture(uSource, vUv);
   float fall = splatFalloff(vUv, uRadius);
   float mask = step(0.5, uToolType);
-  float add = uBinderStrength * uFlow * fall * mask;
+  float dryMask = paperDryMask(vUv);
+  float add = uBinderStrength * uFlow * fall * mask * dryMask;
   fragColor = vec4(src.r + add, 0.0, 0.0, 1.0);
 }
 `

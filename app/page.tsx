@@ -49,6 +49,7 @@ export default function Home() {
     },
     radius: { label: 'Radius', value: 18, min: 2, max: 60, step: 1 },
     flow: { label: 'Flow', value: 0.45, min: 0, max: 1, step: 0.01 },
+    dryness: { label: 'Dry Brush', value: 0, min: 0, max: 1, step: 0.01 },
   })
 
   const dryingControls = useControls('Drying & Deposits', {
@@ -131,7 +132,12 @@ export default function Home() {
   const tool = brushControls.tool as Tool
   const radius = brushControls.radius as number
   const flow = brushControls.flow as number
-  const { evap, absorb, edge, backrunStrength } = dryingControls as { evap: number; absorb: number; edge: number; backrunStrength: number }
+  const { evap, absorb, edge, backrunStrength } = dryingControls as {
+    evap: number
+    absorb: number
+    edge: number
+    backrunStrength: number
+  }
   const { grav, visc, cfl, maxSubsteps } = dynamicsControls as { grav: number; visc: number; cfl: number; maxSubsteps: number }
   const {
     injection: binderInjection,
@@ -160,12 +166,18 @@ export default function Home() {
 
   const pigmentIndex = tool === 'water' ? -1 : parseInt(tool.slice(-1), 10)
 
-  const brush = useMemo(() => ({
-    radius,
-    flow,
-    type: toolToBrushType(tool),
-    color: pigmentIndex >= 0 ? PIGMENT_MASS[pigmentIndex] : ([0, 0, 0] as [number, number, number]),
-  }), [radius, flow, tool, pigmentIndex])
+  const dryness = brushControls.dryness as number
+
+  const brush = useMemo(
+    () => ({
+      radius,
+      flow,
+      type: toolToBrushType(tool),
+      color: pigmentIndex >= 0 ? PIGMENT_MASS[pigmentIndex] : ([0, 0, 0] as [number, number, number]),
+      dryness,
+    }),
+    [radius, flow, tool, pigmentIndex, dryness],
+  )
 
   const params = useMemo<SimulationParams>(() => ({
     grav,

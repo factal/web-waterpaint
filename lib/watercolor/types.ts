@@ -55,18 +55,19 @@ export type PingPongTarget = SwapTarget & {
   swap: () => void
 }
 
+export type MaterialTriplet = [
+  THREE.RawShaderMaterial,
+  THREE.RawShaderMaterial,
+  THREE.RawShaderMaterial,
+]
+
 export type MaterialMap = {
   zero: THREE.RawShaderMaterial
-  splatHeight: THREE.RawShaderMaterial
-  splatVelocity: THREE.RawShaderMaterial
   splatPigment: THREE.RawShaderMaterial
   splatBinder: THREE.RawShaderMaterial
-  advectVelocity: THREE.RawShaderMaterial
-  advectHeight: THREE.RawShaderMaterial
   advectPigment: THREE.RawShaderMaterial
   diffusePigment: THREE.RawShaderMaterial
   advectBinder: THREE.RawShaderMaterial
-  binderForces: THREE.RawShaderMaterial
   absorbDeposit: THREE.RawShaderMaterial
   absorbHeight: THREE.RawShaderMaterial
   absorbPigment: THREE.RawShaderMaterial
@@ -74,7 +75,11 @@ export type MaterialMap = {
   absorbSettled: THREE.RawShaderMaterial
   diffuseWet: THREE.RawShaderMaterial
   composite: THREE.RawShaderMaterial
-  divergence: THREE.RawShaderMaterial
-  jacobi: THREE.RawShaderMaterial
-  project: THREE.RawShaderMaterial
+  lbmForce: THREE.RawShaderMaterial
+  lbmSplat: MaterialTriplet
+  lbmCollision: MaterialTriplet
+  lbmStreaming: MaterialTriplet
+  lbmMatch: MaterialTriplet
+  lbmMacroscopic: THREE.RawShaderMaterial
+  lbmDensity: THREE.RawShaderMaterial
 }

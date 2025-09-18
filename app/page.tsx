@@ -14,6 +14,7 @@ import {
 } from '@/lib/watercolor/WatercolorSimulation'
 
 type Tool = 'water' | 'pigment0' | 'pigment1' | 'pigment2'
+type BrushMode = 'wash' | 'spatter'
 
 const SIM_SIZE = 512
 
@@ -30,8 +31,11 @@ const PIGMENT_SWATCH: Array<[number, number, number]> = [
 ];
 
 
-function toolToBrushType(tool: Tool): BrushType {
-  return tool === 'water' ? 'water' : 'pigment'
+function toolToBrushType(tool: Tool, mode: BrushMode): BrushType {
+  if (tool === 'water') {
+    return 'water'
+  }
+  return mode === 'spatter' ? 'spatter' : 'pigment'
 }
 
 export default function Home() {
@@ -48,8 +52,26 @@ export default function Home() {
         'Pigment Y': 'pigment2',
       },
     },
+    mode: {
+      label: 'Mode',
+      value: 'wash' as BrushMode,
+      options: {
+        Stroke: 'wash',
+        Spatter: 'spatter',
+      },
+    },
     radius: { label: 'Radius', value: 18, min: 2, max: 60, step: 1 },
     flow: { label: 'Flow', value: 0.45, min: 0, max: 1, step: 0.01 },
+  })
+
+  const spatterControls = useControls('Brush Spatter', {
+    dropletCount: { label: 'Droplet Count', value: 16, min: 4, max: 64, step: 1 },
+    dropletJitter: { label: 'Count Jitter', value: 0.3, min: 0, max: 1, step: 0.01 },
+    spread: { label: 'Spread Radius', value: 0.7, min: 0.1, max: 2, step: 0.01 },
+    spreadAngle: { label: 'Spread Angle', value: 160, min: 30, max: 360, step: 1 },
+    sizeMin: { label: 'Size Min', value: 0.2, min: 0.05, max: 1, step: 0.01 },
+    sizeMax: { label: 'Size Max', value: 0.8, min: 0.1, max: 1.6, step: 0.01 },
+    flowJitter: { label: 'Flow Variation', value: 0.45, min: 0, max: 1, step: 0.01 },
   })
 
   const mediumControls = useControls('Brush Medium', {
@@ -145,6 +167,7 @@ export default function Home() {
   })
 
   const tool = brushControls.tool as Tool
+  const mode = brushControls.mode as BrushMode
   const radius = brushControls.radius as number
   const flow = brushControls.flow as number
   const { evap, absorb, edge, backrunStrength } = dryingControls as { evap: number; absorb: number; edge: number; backrunStrength: number }
@@ -168,6 +191,23 @@ export default function Home() {
     granulation: boolean
     paperTextureStrength: number
   }
+  const {
+    dropletCount,
+    dropletJitter,
+    spread,
+    spreadAngle,
+    sizeMin,
+    sizeMax,
+    flowJitter,
+  } = spatterControls as {
+    dropletCount: number
+    dropletJitter: number
+    spread: number
+    spreadAngle: number
+    sizeMin: number
+    sizeMax: number
+    flowJitter: number
+  }
   const { waterCapacityWater, pigmentCapacity, waterConsumption, pigmentConsumption, stampSpacing } = reservoirControls as {
     waterCapacityWater: number;
     pigmentCapacity: number;
@@ -177,12 +217,51 @@ export default function Home() {
   }
   const pigmentIndex = tool === 'water' ? -1 : parseInt(tool.slice(-1), 10)
 
-  const brush = useMemo(() => ({
+  const brush = useMemo(() => {
+    const brushType = toolToBrushType(tool, mode)
+    const pigmentColor = pigmentIndex >= 0
+      ? (PIGMENT_MASS[pigmentIndex] as [number, number, number])
+      : ([0, 0, 0] as [number, number, number])
+
+    if (brushType === 'spatter') {
+      const minSize = Math.min(sizeMin, sizeMax)
+      const maxSize = Math.max(sizeMin, sizeMax)
+      return {
+        radius,
+        flow,
+        type: brushType,
+        color: pigmentColor,
+        spatter: {
+          dropletCount,
+          dropletJitter,
+          spread,
+          spreadAngle,
+          sizeRange: [minSize, maxSize] as [number, number],
+          flowJitter,
+        },
+      }
+    }
+
+    return {
+      radius,
+      flow,
+      type: brushType,
+      color: brushType === 'water' ? ([0, 0, 0] as [number, number, number]) : pigmentColor,
+    }
+  }, [
     radius,
     flow,
-    type: toolToBrushType(tool),
-    color: pigmentIndex >= 0 ? PIGMENT_MASS[pigmentIndex] : ([0, 0, 0] as [number, number, number]),
-  }), [radius, flow, tool, pigmentIndex])
+    tool,
+    mode,
+    pigmentIndex,
+    dropletCount,
+    dropletJitter,
+    spread,
+    spreadAngle,
+    sizeMin,
+    sizeMax,
+    flowJitter,
+  ])
 
   const params = useMemo<SimulationParams>(() => ({
     grav,
@@ -257,7 +336,7 @@ export default function Home() {
           <div className='pointer-events-none absolute bottom-4 left-4 text-[10px] uppercase tracking-wide text-slate-400 sm:text-xs'>
             Resolution {SIM_SIZE}x{SIM_SIZE}
           </div>
-          {brush.type === 'pigment' && pigmentIndex >= 0 && (
+          {brush.type !== 'water' && pigmentIndex >= 0 && (
             <div className='pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/80 px-3 py-1 text-xs text-slate-200 shadow-lg sm:text-sm'>
               <span
                 className='inline-flex h-3 w-3 rounded-full border border-white/40 sm:h-4 sm:w-4'
@@ -265,7 +344,7 @@ export default function Home() {
                   background: `rgb(${PIGMENT_SWATCH[pigmentIndex][0] * 255}, ${PIGMENT_SWATCH[pigmentIndex][1] * 255}, ${PIGMENT_SWATCH[pigmentIndex][2] * 255})`,
                 }}
               />
-              <span>Pigment active</span>
+              <span>{brush.type === 'spatter' ? 'Spatter active' : 'Pigment active'}</span>
             </div>
           )}
         </div>

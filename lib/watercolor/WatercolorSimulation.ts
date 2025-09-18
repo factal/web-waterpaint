@@ -102,14 +102,11 @@ export default class WatercolorSimulation {
 
   // Inject water or pigment into the simulation at a given position.
   splat(brush: BrushSettings) {
-    const { center, radius, flow, type, color, dryness = 0, dryThreshold } = brush
-    const toolType = type === 'water' ? 0 : 1
+    this.splatBatch([brush])
+  }
 
-    const normalizedFlow = THREE.MathUtils.clamp(flow, 0, 1)
-    const dryBase = type === 'water' ? 0 : THREE.MathUtils.clamp(dryness, 0, 1)
-    const dryInfluence = THREE.MathUtils.clamp(dryBase * (1 - 0.55 * normalizedFlow), 0, 1)
-    const computedThreshold = THREE.MathUtils.lerp(-0.15, 0.7, dryInfluence)
-    const threshold = THREE.MathUtils.clamp(dryThreshold ?? computedThreshold, -0.25, 1.0)
+  splatBatch(brushes: BrushSettings[]) {
+    if (brushes.length === 0) return
 
     const splatMaterials = [
       this.materials.splatHeight,
@@ -121,6 +118,23 @@ export default class WatercolorSimulation {
     splatMaterials.forEach((material) => {
       const uniforms = material.uniforms as Record<string, THREE.IUniform>
       uniforms.uPaperHeight.value = this.paperHeightMap
+    })
+
+    brushes.forEach((brush) => this.applySplat(brush, splatMaterials))
+  }
+
+  private applySplat(brush: BrushSettings, splatMaterials: THREE.RawShaderMaterial[]) {
+    const { center, radius, flow, type, color, dryness = 0, dryThreshold } = brush
+    const toolType = type === 'water' ? 0 : 1
+
+    const normalizedFlow = THREE.MathUtils.clamp(flow, 0, 1)
+    const dryBase = type === 'water' ? 0 : THREE.MathUtils.clamp(dryness, 0, 1)
+    const dryInfluence = THREE.MathUtils.clamp(dryBase * (1 - 0.55 * normalizedFlow), 0, 1)
+    const computedThreshold = THREE.MathUtils.lerp(-0.15, 0.7, dryInfluence)
+    const threshold = THREE.MathUtils.clamp(dryThreshold ?? computedThreshold, -0.25, 1.0)
+
+    splatMaterials.forEach((material) => {
+      const uniforms = material.uniforms as Record<string, THREE.IUniform>
       uniforms.uDryThreshold.value = threshold
       uniforms.uDryInfluence.value = dryInfluence
     })
@@ -619,6 +633,8 @@ export default class WatercolorSimulation {
 export type {
   BrushType,
   BrushSettings,
+  SpatterSettings,
+  BaseBrushSettings,
   SimulationParams,
   BinderParams,
   PigmentCoefficients,

@@ -1,16 +1,28 @@
 import * as THREE from 'three'
 
-export type BrushType = 'water' | 'pigment'
+export type BrushType = 'water' | 'pigment' | 'spatter'
 
-export interface BrushSettings {
+export interface BaseBrushSettings {
   center: [number, number]
   radius: number
   flow: number
-  type: BrushType
   color: [number, number, number]
   dryness?: number
   dryThreshold?: number
 }
+
+export interface SpatterSettings {
+  dropletCount: number
+  dropletJitter: number
+  spread: number
+  spreadAngle: number
+  sizeRange: [number, number]
+  flowJitter: number
+}
+
+export type BrushSettings =
+  | (BaseBrushSettings & { type: 'water' | 'pigment' })
+  | (BaseBrushSettings & { type: 'spatter'; spatter: SpatterSettings })
 
 export type ChannelCoefficients = [number, number, number]
 

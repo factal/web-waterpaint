@@ -9,6 +9,10 @@ export interface BaseBrushSettings {
   color: [number, number, number]
   dryness?: number
   dryThreshold?: number
+  lowSolvent?: number
+  binderBoost?: number
+  pigmentBoost?: number
+  depositBoost?: number
 }
 
 export interface SpatterSettings {
@@ -84,6 +88,7 @@ export type MaterialMap = {
   splatVelocity: THREE.RawShaderMaterial
   splatPigment: THREE.RawShaderMaterial
   splatBinder: THREE.RawShaderMaterial
+  splatDeposit: THREE.RawShaderMaterial
   splatRewetPigment: THREE.RawShaderMaterial
   splatRewetDeposit: THREE.RawShaderMaterial
   advectVelocity: THREE.RawShaderMaterial

@@ -90,6 +90,11 @@ export default function Home() {
       step: 0.01,
     },
   })
+  const pasteControls = useControls('Paste Strokes', {
+    pasteMode: { label: 'Enable Paste Mode', value: false },
+    pasteBinderBoost: { label: 'Binder Boost', value: 4, min: 1, max: 12, step: 0.1 },
+    pastePigmentBoost: { label: 'Pigment Boost', value: 2.5, min: 1, max: 10, step: 0.1 },
+  })
   const dryingControls = useControls('Drying & Deposits', {
     evap: { label: 'Evaporation', value: 0.02, min: 0, max: 1, step: 0.001 },
     absorb: { label: 'Absorption', value: 0.25, min: 0, max: 2, step: 0.001 },
@@ -186,6 +191,11 @@ export default function Home() {
     buoyancy: number
   }
   const { binderCharge, waterLoad } = mediumControls as { binderCharge: number; waterLoad: number }
+  const { pasteMode, pasteBinderBoost, pastePigmentBoost } = pasteControls as {
+    pasteMode: boolean
+    pasteBinderBoost: number
+    pastePigmentBoost: number
+  }
   const { stateAbsorption, granulation, paperTextureStrength } = featureControls as {
     stateAbsorption: boolean
     granulation: boolean
@@ -247,12 +257,18 @@ export default function Home() {
       flow,
       type: brushType,
       color: brushType === 'water' ? ([0, 0, 0] as [number, number, number]) : pigmentColor,
+      pasteMode,
+      binderBoost: pasteBinderBoost,
+      pigmentBoost: pastePigmentBoost,
     }
   }, [
     radius,
     flow,
     tool,
     mode,
+    pasteMode,
+    pasteBinderBoost,
+    pastePigmentBoost
     pigmentIndex,
     dropletCount,
     dropletJitter,
@@ -345,6 +361,7 @@ export default function Home() {
                 }}
               />
               <span>{brush.type === 'spatter' ? 'Spatter active' : 'Pigment active'}</span>
+              <span>{pasteMode ? 'Paste mode' : 'Pigment active'}</span>
             </div>
           )}
         </div>

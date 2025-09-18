@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+
 import { createMaterials } from './materials'
 import { createRenderTarget } from './targets'
 import {
@@ -122,7 +123,7 @@ export default class WatercolorSimulation {
     this.depositTexture.needsUpdate = true
 
     this.materials.composite.uniforms.uDeposits.value = this.depositTexture
-
+    
     this.binderSettings = { ...DEFAULT_BINDER_PARAMS }
 
     this.activeSlot.fill(-1)

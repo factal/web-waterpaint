@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { type BinderParams } from './types'
 
 export const DEFAULT_DT = 1 / 90
+
 export const KM_LAYER_SCALE = 1.4
 export const PAPER_COLOR = new THREE.Vector3(0.92, 0.91, 0.88)
 export const PIGMENT_DIFFUSION_COEFF = 0.08
@@ -28,6 +29,7 @@ export const DEFAULT_ABSORB_MIN_FLUX = 0.02
 export const PAPER_DIFFUSION_STRENGTH = 6.0
 export const HUMIDITY_INFLUENCE = 0.6
 export const DEPOSITION_BASE = 0.02
+
 export const GRANULATION_SETTLE_RATE = 0.28
 export const GRANULATION_STRENGTH = 0.45
 

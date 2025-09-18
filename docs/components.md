@@ -57,4 +57,3 @@ The components directory is divided into canvas primitives, DOM layout, cross-tr
   - onSimulationReady(sim): receives the WatercolorSimulation instance when it is ready for imperative control.
 - Attaches pointer listeners directly to the DOM container to track drawing state, convert pointer coordinates to UV space, and schedule splat calls as the cursor moves.
 - Manages a per stroke reservoir so water and pigment naturally deplete and alter the stroke radius and flow over time.
-

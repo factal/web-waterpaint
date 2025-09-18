@@ -58,7 +58,8 @@ UI controls in `app/page.tsx` map to simulation parameters as follows:
 - **Binder** – Passed directly to `binderSettings` to control viscoelastic response.
 - **Edge & granulation** – Influence deposition intensity and whether noise modulates pigment buildup.
 
-## References
+## Module Layout
+
 
 - Solenthaler, B., Pajarola, R. “Predictive-Corrective Incompressible SPH.” ACM SIGGRAPH 2009.
 - Mi You et al. “Realistic Paint Simulation Based on Fluidity, Diffusion, and Absorption.” *Computer Animation and Virtual Worlds*, 2013.

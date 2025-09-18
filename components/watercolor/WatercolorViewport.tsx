@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -120,54 +119,101 @@ const WatercolorViewport = ({
       const reservoir = reservoirRef.current
       if (!sim || !reservoir) return
 
-      if (reservoir.lastPos) {
-        const dx = uv[0] - reservoir.lastPos[0]
-        const dy = uv[1] - reservoir.lastPos[1]
-        reservoir.distanceSinceStamp += Math.hypot(dx, dy)
+      const prevPos = reservoir.lastPos
+      const prevDistance = forceStamp ? 0 : reservoir.distanceSinceStamp
+      const brushState = brushRef.current
+
+      let dx = 0
+      let dy = 0
+      let segmentLength = 0
+      if (prevPos) {
+        dx = uv[0] - prevPos[0]
+        dy = uv[1] - prevPos[1]
+        segmentLength = Math.hypot(dx, dy)
       }
       reservoir.lastPos = uv
 
-      if (!forceStamp && reservoir.distanceSinceStamp < stampSpacing) return
+      const stampOnce = (target: [number, number]) => {
+        const waterRatio = reservoir.initialWater > 0 ? reservoir.water / reservoir.initialWater : 0
+        const pigmentRatio = reservoir.initialPigment > 0 ? reservoir.pigment / reservoir.initialPigment : 0
 
-      const brushState = brushRef.current
-      const waterRatio = reservoir.initialWater > 0 ? reservoir.water / reservoir.initialWater : 0
-      const pigmentRatio = reservoir.initialPigment > 0 ? reservoir.pigment / reservoir.initialPigment : 0
+        if (brushState.type === 'water' && waterRatio <= 0.01) return false
+        if (brushState.type === 'pigment' && (waterRatio <= 0.01 || pigmentRatio <= 0.01)) return false
 
-      if (brushState.type === 'water' && waterRatio <= 0.01) return
-      if (brushState.type === 'pigment' && (waterRatio <= 0.01 || pigmentRatio <= 0.01)) return
+        const radiusScale = 0.55 + 0.45 * waterRatio
+        const flowScale = 0.25 + 0.75 * waterRatio
+        const scaledRadius = Math.max(brushState.radius * radiusScale, 1)
+        const scaledFlow = brushState.flow * flowScale
 
-      const radiusScale = 0.55 + 0.45 * waterRatio
-      const flowScale = 0.25 + 0.75 * waterRatio
-      const scaledRadius = Math.max(brushState.radius * radiusScale, 1)
-      const scaledFlow = brushState.flow * flowScale
+        const color: [number, number, number] = brushState.type === 'pigment'
+          ? [
+              brushState.color[0] * pigmentRatio,
+              brushState.color[1] * pigmentRatio,
+              brushState.color[2] * pigmentRatio,
+            ]
+          : [0, 0, 0]
 
-      const color: [number, number, number] = brushState.type === 'pigment'
-        ? [
-            brushState.color[0] * pigmentRatio,
-            brushState.color[1] * pigmentRatio,
-            brushState.color[2] * pigmentRatio,
-          ]
-        : [0, 0, 0]
+        sim.splat({
+          center: target,
+          radius: scaledRadius / size,
+          flow: scaledFlow,
+          type: brushState.type,
+          color,
+        })
 
-      sim.splat({
-        center: uv,
-        radius: scaledRadius / size,
-        flow: scaledFlow,
-        type: brushState.type,
-        color,
-      })
+        const areaFactor = (scaledRadius / size) ** 2
+        const flowContribution = scaledFlow * 0.5
+        const consumption = waterConsumption * (areaFactor + flowContribution)
+        reservoir.water = Math.max(0, reservoir.water - consumption)
+        if (brushState.type === 'pigment') {
+          const pigmentUse = pigmentConsumption * (areaFactor + flowContribution)
+          reservoir.pigment = Math.max(0, reservoir.pigment - pigmentUse)
+        }
 
-      const areaFactor = (scaledRadius / size) ** 2
-      const flowContribution = scaledFlow * 0.5
-      const consumption = waterConsumption * (areaFactor + flowContribution)
-      reservoir.water = Math.max(0, reservoir.water - consumption)
-      if (brushState.type === 'pigment') {
-        const pigmentUse = pigmentConsumption * (areaFactor + flowContribution)
-        reservoir.pigment = Math.max(0, reservoir.pigment - pigmentUse)
+        reservoir.lastStamp = target
+        return true
       }
 
-      reservoir.lastStamp = uv
-      reservoir.distanceSinceStamp = 0
+      if (forceStamp || !reservoir.lastStamp || !prevPos) {
+        if (stampOnce(uv)) {
+          reservoir.distanceSinceStamp = 0
+        }
+        return
+      }
+
+      if (segmentLength === 0) {
+        reservoir.distanceSinceStamp = prevDistance
+        return
+      }
+
+      const totalDistance = prevDistance + segmentLength
+      let lastMultiple = Math.floor(prevDistance / stampSpacing)
+      const kStart = lastMultiple + 1
+      const kEnd = Math.floor(totalDistance / stampSpacing)
+
+      if (kEnd < kStart) {
+        reservoir.distanceSinceStamp = totalDistance
+        return
+      }
+
+      // Subdivide the pointer segment so fast motion still emits evenly spaced splats.
+      for (let k = kStart; k <= kEnd; k++) {
+        const dist = k * stampSpacing
+        const t = (dist - prevDistance) / segmentLength
+        const target: [number, number] = [
+          prevPos[0] + dx * t,
+          prevPos[1] + dy * t,
+        ]
+
+        if (!stampOnce(target)) {
+          reservoir.distanceSinceStamp = totalDistance - lastMultiple * stampSpacing
+          return
+        }
+
+        lastMultiple = k
+      }
+
+      reservoir.distanceSinceStamp = totalDistance - lastMultiple * stampSpacing
     }
 
     // Pointer listeners manage painting lifecycle and prevent unwanted browser gestures.
@@ -235,3 +281,4 @@ const WatercolorViewport = ({
 }
 
 export default WatercolorViewport
+

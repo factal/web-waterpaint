@@ -10,6 +10,7 @@ import {
   GRANULATION_STRENGTH,
   HUMIDITY_INFLUENCE,
   PIGMENT_DIFFUSION_COEFF,
+  DEFAULT_SURFACE_TENSION_PARAMS,
 } from './constants'
 import {
   type BinderParams,
@@ -17,6 +18,7 @@ import {
   type MaterialMap,
   type PingPongTarget,
   type SimulationParams,
+  type SurfaceTensionParams,
 } from './types'
 
 // GPU-driven watercolor solver combining shallow-water flow, pigment transport, and paper optics.
@@ -280,6 +282,7 @@ export default class WatercolorSimulation {
       cfl,
       maxSubsteps,
       binder,
+      surfaceTension,
       pigmentCoefficients,
     } = params
 
@@ -287,6 +290,11 @@ export default class WatercolorSimulation {
 
     const substeps = this.determineSubsteps(cfl, maxSubsteps, dt)
     const substepDt = dt / substeps
+
+    const surfaceParams = {
+      ...DEFAULT_SURFACE_TENSION_PARAMS,
+      ...surfaceTension,
+    }
 
     const diffusionCoefficients = new THREE.Vector3(
       pigmentCoefficients?.diffusion?.[0] ?? PIGMENT_DIFFUSION_COEFF,
@@ -342,6 +350,10 @@ export default class WatercolorSimulation {
       this.renderToTarget(advectVel, this.targets.UV.write)
       this.targets.UV.swap()
       this.projectVelocity()
+
+      if (surfaceParams.enabled && surfaceParams.strength > 0) {
+        this.applySurfaceTension(surfaceParams, substepDt)
+      }
 
       const advectHeight = this.materials.advectHeight
       advectHeight.uniforms.uHeight.value = this.targets.H.read.texture
@@ -502,6 +514,26 @@ export default class WatercolorSimulation {
     diffuse.uniforms.uReplenish.value = replenish
     this.renderToTarget(diffuse, this.targets.W.write)
     this.targets.W.swap()
+  }
+
+  private applySurfaceTension(params: SurfaceTensionParams, dt: number) {
+    const surfaceTension = this.materials.surfaceTension
+    const uniforms = surfaceTension.uniforms as Record<string, THREE.IUniform>
+    uniforms.uHeight.value = this.targets.H.read.texture
+    uniforms.uWet.value = this.targets.W.read.texture
+    uniforms.uVelocity.value = this.targets.UV.read.texture
+    const texelUniform = uniforms.uTexel?.value
+    if (texelUniform instanceof THREE.Vector2) {
+      texelUniform.copy(this.texelSize)
+    }
+    uniforms.uDt.value = dt
+    uniforms.uStrength.value = params.strength
+    uniforms.uThreshold.value = Math.max(params.threshold, 0)
+    uniforms.uBreakThreshold.value = Math.max(params.breakThreshold, 0)
+    uniforms.uSnapStrength.value = params.snapStrength
+    uniforms.uVelocityLimit.value = Math.max(params.velocityLimit, 1e-4)
+    this.renderToTarget(surfaceTension, this.targets.H.write)
+    this.targets.H.swap()
   }
 
 
@@ -716,6 +748,7 @@ export type {
   BinderParams,
   PigmentCoefficients,
   ChannelCoefficients,
+  SurfaceTensionParams,
 } from './types'
 export {
   DEFAULT_BINDER_PARAMS,
@@ -725,4 +758,5 @@ export {
   DEFAULT_REWET_STRENGTH,
   PIGMENT_REWET,
   DEFAULT_PAPER_TEXTURE_STRENGTH,
+  DEFAULT_SURFACE_TENSION_PARAMS,
 } from './constants'

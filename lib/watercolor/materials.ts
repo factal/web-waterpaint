@@ -25,6 +25,7 @@ import {
   SPLAT_REWET_DEPOSIT_FRAGMENT,
   SPLAT_REWET_PIGMENT_FRAGMENT,
   SPLAT_VELOCITY_FRAGMENT,
+  SURFACE_TENSION_FRAGMENT,
   ZERO_FRAGMENT,
   VELOCITY_MAX_FRAGMENT,
 } from './shaders'
@@ -33,6 +34,7 @@ import {
   DEFAULT_ABSORB_MIN_FLUX,
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_BINDER_PARAMS,
+  DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_REWET_STRENGTH,
   DEFAULT_DT,
   DEPOSITION_BASE,
@@ -199,6 +201,19 @@ export function createMaterials(
     uBinderBuoyancy: { value: DEFAULT_BINDER_PARAMS.buoyancy },
   })
 
+  const surfaceTension = createMaterial(SURFACE_TENSION_FRAGMENT, {
+    uHeight: { value: null },
+    uWet: { value: null },
+    uVelocity: { value: null },
+    uTexel: { value: texelSize.clone() },
+    uDt: { value: DEFAULT_DT },
+    uStrength: { value: DEFAULT_SURFACE_TENSION_PARAMS.strength },
+    uThreshold: { value: DEFAULT_SURFACE_TENSION_PARAMS.threshold },
+    uBreakThreshold: { value: DEFAULT_SURFACE_TENSION_PARAMS.breakThreshold },
+    uSnapStrength: { value: DEFAULT_SURFACE_TENSION_PARAMS.snapStrength },
+    uVelocityLimit: { value: DEFAULT_SURFACE_TENSION_PARAMS.velocityLimit },
+  })
+
   const advectPigment = createMaterial(ADVECT_PIGMENT_FRAGMENT, {
     uPigment: { value: null },
     uVelocity: { value: null },
@@ -313,6 +328,7 @@ export function createMaterials(
     splatRewetDeposit,
     advectVelocity,
     advectHeight,
+    surfaceTension,
     advectPigment,
     diffusePigment,
     advectBinder,

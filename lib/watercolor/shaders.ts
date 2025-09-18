@@ -221,6 +221,68 @@ void main() {
 }
 `
 
+export const SURFACE_TENSION_FRAGMENT = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uHeight;
+uniform sampler2D uWet;
+uniform sampler2D uVelocity;
+uniform vec2 uTexel;
+uniform float uDt;
+uniform float uStrength;
+uniform float uThreshold;
+uniform float uBreakThreshold;
+uniform float uSnapStrength;
+uniform float uVelocityLimit;
+
+float sampleHeight(vec2 uv) {
+  return texture(uHeight, uv).r;
+}
+
+void main() {
+  float h = sampleHeight(vUv);
+  float wet = clamp(texture(uWet, vUv).r, 0.0, 1.0);
+  vec2 vel = texture(uVelocity, vUv).xy;
+  float speed = length(vel);
+
+  vec2 du = vec2(uTexel.x, 0.0);
+  vec2 dv = vec2(0.0, uTexel.y);
+
+  float left = sampleHeight(vUv - du);
+  float right = sampleHeight(vUv + du);
+  float bottom = sampleHeight(vUv - dv);
+  float top = sampleHeight(vUv + dv);
+
+  float neighborSum = left + right + top + bottom;
+  float neighborAvg = neighborSum * 0.25;
+  float laplacian = neighborSum - 4.0 * h;
+  float maxNeighbour = max(max(left, right), max(top, bottom));
+
+  float threshold = max(uThreshold, 1e-5);
+  float breakThreshold = max(uBreakThreshold, 0.0);
+  float velocityLimit = max(uVelocityLimit, 1e-4);
+
+  float velocityGate = 1.0 - smoothstep(0.5 * velocityLimit, velocityLimit, speed);
+  float wetGate = smoothstep(0.02, 0.35, wet);
+  float thinPresence = smoothstep(1e-5, threshold, h);
+  float isolation = 1.0 - smoothstep(threshold, threshold * 2.0, neighborAvg);
+  float thinMask = thinPresence * isolation;
+
+  float curvature = max(-laplacian, 0.0);
+  float tension = uStrength * curvature * thinMask * wetGate * velocityGate * uDt;
+  float newH = max(h - tension, 0.0);
+
+  float snapMask = 1.0 - smoothstep(breakThreshold, breakThreshold * 2.0 + 1e-5, newH);
+  float isolationTight = 1.0 - smoothstep(threshold * 0.5, threshold, maxNeighbour);
+  float snapStrength = clamp(uSnapStrength, 0.0, 1.0);
+  float snap = snapStrength * snapMask * isolationTight * wetGate * velocityGate;
+  newH = mix(newH, 0.0, clamp(snap, 0.0, 1.0));
+
+  fragColor = vec4(newH, 0.0, 0.0, 1.0);
+}
+`
+
 export const ADVECT_PIGMENT_FRAGMENT = `
 precision highp float;
 in vec2 vUv;

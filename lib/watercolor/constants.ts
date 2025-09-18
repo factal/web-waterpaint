@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-import { type BinderParams } from './types'
+import { type BinderParams, type SurfaceTensionParams } from './types'
 
 export const DEFAULT_DT = 1 / 90
 export const DEPOSITION_BASE = 0.02
@@ -41,4 +41,13 @@ export const DEFAULT_BINDER_PARAMS: BinderParams = {
   elasticity: 1.25,
   viscosity: 0.65,
   buoyancy: 0.12,
+}
+
+export const DEFAULT_SURFACE_TENSION_PARAMS: SurfaceTensionParams = {
+  enabled: true,
+  strength: 2.8,
+  threshold: 0.12,
+  breakThreshold: 0.025,
+  snapStrength: 0.6,
+  velocityLimit: 0.65,
 }

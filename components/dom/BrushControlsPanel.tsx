@@ -327,7 +327,7 @@ const BrushControlsPanel = ({
 
         <TabsContent value='pigments' className='space-y-6 pt-4'>
           <div className='space-y-4'>
-            <p className='text-xs text-slate-400'>Select a target colour for each slot to remap the cyan, magenta, and yellow channel mix. Values are normalized to 100%.</p>
+            <p className='text-xs text-slate-400'>Select a target colour for each slot to remap the cyan, magenta, and yellow channel mix. Values reflect the CMY conversion of the chosen swatch.</p>
             {pigments.map((slot, index) => {
               const label = PIGMENT_NAMES[index] ?? `Pigment ${index + 1}`
               const swatchStyle = {
@@ -342,7 +342,7 @@ const BrushControlsPanel = ({
                   <div className='flex items-center justify-between gap-3'>
                     <div className='space-y-1'>
                       <p className='text-sm font-semibold text-slate-100'>{label}</p>
-                      <p className='text-xs text-slate-500'>Normalized CMY mix</p>
+                      <p className='text-xs text-slate-500'>CMY mix</p>
                     </div>
                     <span className='inline-flex h-4 w-4 rounded-full border border-white/40' style={swatchStyle} />
                   </div>

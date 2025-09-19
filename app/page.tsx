@@ -127,55 +127,24 @@ type PigmentSlot = {
   mass: PigmentTuple
 }
 
-const PIGMENT_BASE_RGB: PigmentTuple[] = [
-  [0.05, 0.65, 0.95],
-  [0.95, 0.25, 0.85],
-  [0.98, 0.88, 0.2],
-]
-
-const createPigmentMatrix = () => {
-  const matrix = new THREE.Matrix3()
-  matrix.set(
-    PIGMENT_BASE_RGB[0][0],
-    PIGMENT_BASE_RGB[1][0],
-    PIGMENT_BASE_RGB[2][0],
-    PIGMENT_BASE_RGB[0][1],
-    PIGMENT_BASE_RGB[1][1],
-    PIGMENT_BASE_RGB[2][1],
-    PIGMENT_BASE_RGB[0][2],
-    PIGMENT_BASE_RGB[1][2],
-    PIGMENT_BASE_RGB[2][2],
-  )
-  return matrix
-}
-
-const PIGMENT_MATRIX = createPigmentMatrix()
-const PIGMENT_MATRIX_INVERSE = PIGMENT_MATRIX.clone().invert()
-
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1)
 
-const normalizePigmentMass = (mass: PigmentTuple): PigmentTuple => {
+const sanitizePigmentMass = (mass: PigmentTuple): PigmentTuple => {
   const sanitized: PigmentTuple = [
-    Number.isFinite(mass[0]) ? Math.max(mass[0], 0) : 0,
-    Number.isFinite(mass[1]) ? Math.max(mass[1], 0) : 0,
-    Number.isFinite(mass[2]) ? Math.max(mass[2], 0) : 0,
+    Number.isFinite(mass[0]) ? clamp01(mass[0]) : 0,
+    Number.isFinite(mass[1]) ? clamp01(mass[1]) : 0,
+    Number.isFinite(mass[2]) ? clamp01(mass[2]) : 0,
   ]
-  const total = sanitized[0] + sanitized[1] + sanitized[2]
-  if (total <= 1e-6) {
-    return [1 / 3, 1 / 3, 1 / 3]
-  }
-  return [sanitized[0] / total, sanitized[1] / total, sanitized[2] / total]
+  return sanitized
 }
 
 const pigmentMassToRgb = (mass: PigmentTuple): PigmentTuple => {
-  const normalized = normalizePigmentMass(mass)
-  const color: PigmentTuple = [0, 0, 0]
-  normalized.forEach((weight, index) => {
-    color[0] += PIGMENT_BASE_RGB[index][0] * weight
-    color[1] += PIGMENT_BASE_RGB[index][1] * weight
-    color[2] += PIGMENT_BASE_RGB[index][2] * weight
-  })
-  return [clamp01(color[0]), clamp01(color[1]), clamp01(color[2])]
+  const sanitized = sanitizePigmentMass(mass)
+  return [
+    clamp01(1 - sanitized[0]),
+    clamp01(1 - sanitized[1]),
+    clamp01(1 - sanitized[2]),
+  ]
 }
 
 const rgbToPigmentMass = (rgb: PigmentTuple): PigmentTuple => {
@@ -184,15 +153,17 @@ const rgbToPigmentMass = (rgb: PigmentTuple): PigmentTuple => {
     clamp01(rgb[1]),
     clamp01(rgb[2]),
   ]
-  const vector = new THREE.Vector3(sanitized[0], sanitized[1], sanitized[2])
-  vector.applyMatrix3(PIGMENT_MATRIX_INVERSE)
-  return normalizePigmentMass([vector.x, vector.y, vector.z])
+  return sanitizePigmentMass([
+    1 - sanitized[0],
+    1 - sanitized[1],
+    1 - sanitized[2],
+  ])
 }
 
 const DEFAULT_PIGMENTS: PigmentSlot[] = [
-  { mass: normalizePigmentMass([1, 0, 0]) },
-  { mass: normalizePigmentMass([0, 1, 0]) },
-  { mass: normalizePigmentMass([0, 0, 1]) },
+  { mass: sanitizePigmentMass([1, 0, 0]) },
+  { mass: sanitizePigmentMass([0, 1, 0]) },
+  { mass: sanitizePigmentMass([0, 0, 1]) },
 ]
 
 

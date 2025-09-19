@@ -10,6 +10,7 @@ import {
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_BINDER_PARAMS,
   DEFAULT_PAPER_TEXTURE_STRENGTH,
+  DEFAULT_SIZING_INFLUENCE,
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
   type BrushType,
@@ -208,6 +209,13 @@ export default function Home() {
     absorb: { label: 'Absorption', value: 0.25, min: 0, max: 2, step: 0.001 },
     edge: { label: 'Edge Bias', value: 2.0, min: 0, max: 8, step: 0.01 },
     backrunStrength: { label: 'Backrun Strength', value: 0.45, min: 0, max: 2, step: 0.01 },
+    sizingInfluence: {
+      label: 'Sizing Variation',
+      value: DEFAULT_SIZING_INFLUENCE,
+      min: 0,
+      max: 0.6,
+      step: 0.005,
+    },
   })
 
   const dynamicsControls = useControls('Flow Dynamics', {
@@ -352,7 +360,13 @@ export default function Home() {
   const maskId = brushControls.mask as BrushMaskId
   const maskStrength = brushControls.maskStrength as number
   const streakDensity = brushControls.streakDensity as number
-  const { evap, absorb, edge, backrunStrength } = dryingControls as { evap: number; absorb: number; edge: number; backrunStrength: number }
+  const { evap, absorb, edge, backrunStrength, sizingInfluence } = dryingControls as {
+    evap: number
+    absorb: number
+    edge: number
+    backrunStrength: number
+    sizingInfluence: number
+  }
   const { grav, visc, cfl, maxSubsteps } = dynamicsControls as { grav: number; visc: number; cfl: number; maxSubsteps: number }
   const {
     enabled: surfaceTensionEnabled,
@@ -522,6 +536,7 @@ export default function Home() {
     evap,
     edge,
     backrunStrength,
+    sizingInfluence,
     stateAbsorption,
     granulation,
     paperTextureStrength,
@@ -567,6 +582,7 @@ export default function Home() {
     evap,
     edge,
     backrunStrength,
+    sizingInfluence,
     stateAbsorption,
     granulation,
     paperTextureStrength,

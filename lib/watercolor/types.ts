@@ -75,6 +75,7 @@ export interface SimulationParams {
   granulation: boolean
   paperTextureStrength: number
   backrunStrength: number
+  sizingInfluence: number
   absorbExponent: number
   absorbTimeOffset: number
   absorbMinFlux: number

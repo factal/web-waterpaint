@@ -8,6 +8,7 @@ import {
   createRenderTarget,
   createSizingField,
 } from './targets'
+import StrokeMaskBuilder from './maskBuilder'
 import {
   DEFAULT_BINDER_PARAMS,
   DEFAULT_DT,
@@ -60,6 +61,7 @@ export default class WatercolorSimulation {
   private readonly velocityReductionTargets: THREE.WebGLRenderTarget[]
   private readonly velocityMaxMaterial: THREE.RawShaderMaterial
   private readonly velocityReadBuffer = new Float32Array(4)
+  private readonly maskBuilder: StrokeMaskBuilder
   private binderSettings: BinderParams
   private absorbElapsed = 0
   private binderBoostFactor = 1
@@ -101,6 +103,14 @@ export default class WatercolorSimulation {
       this.fiberTexture,
       this.paperHeightMap,
       this.sizingMap,
+    )
+
+    this.maskBuilder = new StrokeMaskBuilder(
+      renderer,
+      this.materials.strokeMask,
+      this.materials.zero,
+      size,
+      textureType,
     )
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.materials.zero)
@@ -157,11 +167,13 @@ export default class WatercolorSimulation {
     return this.fiberTexture
   }
 
-  // Inject water or pigment into the simulation at a given position.
+  get strokeMaskBuilder(): StrokeMaskBuilder {
+    return this.maskBuilder
+  }
+
+  // Inject water or pigment into the simulation using a prepared mask texture.
   splat(brush: BrushSettings) {
     const {
-      center,
-      radius,
       flow,
       type,
       color,
@@ -173,11 +185,15 @@ export default class WatercolorSimulation {
       depositBoost,
       mask,
     } = brush
-    const toolType = type === 'water' ? 0 : 1
 
+    const toolType = type === 'water' ? 0 : 1
     const normalizedFlow = THREE.MathUtils.clamp(flow, 0, 1)
+    const maskFlow = Math.max(mask.flowScale, 0)
+    const effectiveFlow = normalizedFlow * maskFlow
+    const clampedFlow = THREE.MathUtils.clamp(effectiveFlow, 0, 1)
+
     const dryBase = type === 'water' ? 0 : THREE.MathUtils.clamp(dryness, 0, 1)
-    const dryInfluence = THREE.MathUtils.clamp(dryBase * (1 - 0.55 * normalizedFlow), 0, 1)
+    const dryInfluence = THREE.MathUtils.clamp(dryBase * (1 - 0.55 * clampedFlow), 0, 1)
     const computedThreshold = THREE.MathUtils.lerp(-0.15, 0.7, dryInfluence)
     const threshold = THREE.MathUtils.clamp(dryThreshold ?? computedThreshold, -0.25, 1.0)
 
@@ -207,56 +223,55 @@ export default class WatercolorSimulation {
 
     const allSplatMaterials = [...splatMaterials, ...rewetMaterials]
 
-    const defaultMaskTexture =
-      (this.materials.splatHeight.uniforms.uBristleMask.value as THREE.Texture | null) ??
-      null
-    const maskTexture = (mask?.texture as THREE.Texture | null) ?? defaultMaskTexture
-    const maskRotation = mask?.rotation ?? 0
-    const maskStrength = THREE.MathUtils.clamp(mask?.strength ?? 0, 0, 1)
-    const maskScale = mask?.scale ?? [1, 1]
+    const maskTexture = mask.texture
+    const maskStrength = THREE.MathUtils.clamp(mask.strength, 0, 2)
+    const maskFlowScale = Math.max(maskFlow, 0)
+
+    const velocityVector = new THREE.Vector2(mask.velocity?.[0] ?? 0, mask.velocity?.[1] ?? 0)
+    let velocityStrength = mask.velocityStrength ?? velocityVector.length()
+    if (velocityStrength > 1e-5) {
+      velocityVector.normalize()
+    } else {
+      velocityStrength = 0
+      velocityVector.set(0, 0)
+    }
 
     allSplatMaterials.forEach((material) => {
       const uniforms = material.uniforms as Record<string, THREE.IUniform>
       uniforms.uPaperHeight.value = this.paperHeightMap
       uniforms.uDryThreshold.value = threshold
       uniforms.uDryInfluence.value = dryInfluence
-      if (uniforms.uBristleMask) {
-        uniforms.uBristleMask.value = maskTexture
-      }
-      if (uniforms.uMaskScale) {
-        const scaleUniform = uniforms.uMaskScale.value as THREE.Vector2
-        scaleUniform.set(maskScale[0], maskScale[1])
-      }
-      if (uniforms.uMaskRotation) {
-        uniforms.uMaskRotation.value = maskRotation
+      if (uniforms.uMask) {
+        uniforms.uMask.value = maskTexture
       }
       if (uniforms.uMaskStrength) {
         uniforms.uMaskStrength.value = maskStrength
+      }
+      if (uniforms.uMaskFlow) {
+        uniforms.uMaskFlow.value = maskFlowScale
       }
     })
 
     const splatHeight = this.materials.splatHeight
     splatHeight.uniforms.uSource.value = this.targets.H.read.texture
-    splatHeight.uniforms.uCenter.value.set(center[0], center[1])
-    splatHeight.uniforms.uRadius.value = radius
-    splatHeight.uniforms.uFlow.value = flow
+    splatHeight.uniforms.uFlow.value = normalizedFlow
     splatHeight.uniforms.uToolType.value = toolType
     this.renderToTarget(splatHeight, this.targets.H.write)
     this.targets.H.swap()
 
     const splatVelocity = this.materials.splatVelocity
     splatVelocity.uniforms.uSource.value = this.targets.UV.read.texture
-    splatVelocity.uniforms.uCenter.value.set(center[0], center[1])
-    splatVelocity.uniforms.uRadius.value = radius
-    splatVelocity.uniforms.uFlow.value = flow
+    splatVelocity.uniforms.uFlow.value = normalizedFlow
+    const velocityUniform = splatVelocity.uniforms.uVelocityVector
+      .value as THREE.Vector2
+    velocityUniform.copy(velocityVector)
+    splatVelocity.uniforms.uVelocityStrength.value = velocityStrength
     this.renderToTarget(splatVelocity, this.targets.UV.write)
     this.targets.UV.swap()
 
     const splatPigment = this.materials.splatPigment
     splatPigment.uniforms.uSource.value = this.targets.C.read.texture
-    splatPigment.uniforms.uCenter.value.set(center[0], center[1])
-    splatPigment.uniforms.uRadius.value = radius
-    splatPigment.uniforms.uFlow.value = flow
+    splatPigment.uniforms.uFlow.value = normalizedFlow
     splatPigment.uniforms.uToolType.value = toolType
     const pigmentUniform = splatPigment.uniforms.uPigment.value as THREE.Vector3
     pigmentUniform.set(color[0], color[1], color[2])
@@ -267,9 +282,7 @@ export default class WatercolorSimulation {
 
     const splatBinder = this.materials.splatBinder
     splatBinder.uniforms.uSource.value = this.targets.B.read.texture
-    splatBinder.uniforms.uCenter.value.set(center[0], center[1])
-    splatBinder.uniforms.uRadius.value = radius
-    splatBinder.uniforms.uFlow.value = flow
+    splatBinder.uniforms.uFlow.value = normalizedFlow
     splatBinder.uniforms.uToolType.value = toolType
     splatBinder.uniforms.uBinderStrength.value = this.binderSettings.injection * binderMultiplier
     splatBinder.uniforms.uLowSolvent.value = solvent
@@ -279,9 +292,7 @@ export default class WatercolorSimulation {
     if (pasteActive) {
       const splatDeposit = this.materials.splatDeposit
       splatDeposit.uniforms.uSource.value = this.targets.DEP.read.texture
-      splatDeposit.uniforms.uCenter.value.set(center[0], center[1])
-      splatDeposit.uniforms.uRadius.value = radius
-      splatDeposit.uniforms.uFlow.value = flow
+      splatDeposit.uniforms.uFlow.value = normalizedFlow
       const depositPigment = splatDeposit.uniforms.uPigment.value as THREE.Vector3
       depositPigment.set(color[0], color[1], color[2])
       splatDeposit.uniforms.uLowSolvent.value = solvent
@@ -290,27 +301,23 @@ export default class WatercolorSimulation {
       this.targets.DEP.swap()
     }
 
-    if (toolType === 0 && flow > 0) {
+    if (toolType === 0 && clampedFlow > 0) {
       const rewetPigment = this.materials.splatRewetPigment
       rewetPigment.uniforms.uSource.value = this.targets.C.read.texture
       rewetPigment.uniforms.uDeposits.value = this.targets.DEP.read.texture
-      rewetPigment.uniforms.uCenter.value.set(center[0], center[1])
-      rewetPigment.uniforms.uRadius.value = radius
-      rewetPigment.uniforms.uFlow.value = flow
+      rewetPigment.uniforms.uFlow.value = normalizedFlow
       this.renderToTarget(rewetPigment, this.targets.C.write)
       this.targets.C.swap()
 
       const rewetDeposit = this.materials.splatRewetDeposit
       rewetDeposit.uniforms.uSource.value = this.targets.DEP.read.texture
-      rewetDeposit.uniforms.uCenter.value.set(center[0], center[1])
-      rewetDeposit.uniforms.uRadius.value = radius
-      rewetDeposit.uniforms.uFlow.value = flow
+      rewetDeposit.uniforms.uFlow.value = normalizedFlow
       this.renderToTarget(rewetDeposit, this.targets.DEP.write)
       this.targets.DEP.swap()
     }
 
     const absorbReset = toolType === 0 ? 0.3 : 0.15
-    this.absorbElapsed = Math.max(0, this.absorbElapsed - absorbReset * flow)
+    this.absorbElapsed = Math.max(0, this.absorbElapsed - absorbReset * clampedFlow)
     if (pasteActive) {
       const evapBoost = THREE.MathUtils.lerp(0.8, 1.6, solvent)
       this.absorbElapsed += evapBoost
@@ -685,6 +692,7 @@ export default class WatercolorSimulation {
     this.fiberTexture.dispose()
     this.paperHeightMap.dispose()
     this.sizingMap.dispose()
+    this.maskBuilder.dispose()
     this.velocityReductionTargets.forEach((target) => target.dispose())
   }
 

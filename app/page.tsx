@@ -312,7 +312,6 @@ export default function Home() {
     pigmentCapacity: { label: 'Pigment Charge', value: 11, min: 1, max: 20, step: 0.05 },
     waterConsumption: { label: 'Water Consumption', value: 0.28, min: 0.01, max: 1, step: 0.01 },
     pigmentConsumption: { label: 'Pigment Consumption', value: 0.22, min: 0.01, max: 1, step: 0.01 },
-    stampSpacing: { label: 'Stamp Spacing', value: 0.015, min: 0.001, max: 0.05, step: 0.001 },
   })
 
   const featureControls = useControls('Features', {
@@ -493,12 +492,11 @@ export default function Home() {
     threshold: number
     noiseScale: number
   }
-  const { waterCapacityWater, pigmentCapacity, waterConsumption, pigmentConsumption, stampSpacing } = reservoirControls as {
+  const { waterCapacityWater, pigmentCapacity, waterConsumption, pigmentConsumption } = reservoirControls as {
     waterCapacityWater: number;
     pigmentCapacity: number;
     waterConsumption: number;
     pigmentConsumption: number;
-    stampSpacing: number;
   }
   const pigmentIndex = tool === 'water' ? -1 : parseInt(tool.slice(-1), 10)
 
@@ -636,7 +634,6 @@ export default function Home() {
       pigmentCapacity,
       waterConsumption,
       pigmentConsumption,
-      stampSpacing,
     },
   }), [
     grav,
@@ -677,7 +674,6 @@ export default function Home() {
     pigmentCapacity,
     waterConsumption,
     pigmentConsumption,
-    stampSpacing,
   ])
 
   return (

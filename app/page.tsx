@@ -10,6 +10,7 @@ import BrushControlsPanel, {
   type BrushSettings,
   type BrushSpatterSettings,
   type BrushTool,
+  type PigmentPickerSlot,
 } from '@/components/dom/BrushControlsPanel'
 import WatercolorViewport, { type ViewportBrush } from '@/components/watercolor/WatercolorViewport'
 import { DEBUG_VIEW_LABELS, DEBUG_VIEW_OPTIONS, type DebugView } from '@/components/watercolor/debugViews'
@@ -120,17 +121,79 @@ function createBrushMaskAssets(density: number): Record<BrushMaskId, BrushMaskAs
   }
 }
 
-const PIGMENT_MASS: Array<[number, number, number]> = [
-  [1, 0, 0],
-  [0, 1, 0],
-  [0, 0, 1],
-];
+type PigmentTuple = [number, number, number]
 
-const PIGMENT_SWATCH: Array<[number, number, number]> = [
+type PigmentSlot = {
+  mass: PigmentTuple
+}
+
+const PIGMENT_BASE_RGB: PigmentTuple[] = [
   [0.05, 0.65, 0.95],
   [0.95, 0.25, 0.85],
   [0.98, 0.88, 0.2],
-];
+]
+
+const createPigmentMatrix = () => {
+  const matrix = new THREE.Matrix3()
+  matrix.set(
+    PIGMENT_BASE_RGB[0][0],
+    PIGMENT_BASE_RGB[1][0],
+    PIGMENT_BASE_RGB[2][0],
+    PIGMENT_BASE_RGB[0][1],
+    PIGMENT_BASE_RGB[1][1],
+    PIGMENT_BASE_RGB[2][1],
+    PIGMENT_BASE_RGB[0][2],
+    PIGMENT_BASE_RGB[1][2],
+    PIGMENT_BASE_RGB[2][2],
+  )
+  return matrix
+}
+
+const PIGMENT_MATRIX = createPigmentMatrix()
+const PIGMENT_MATRIX_INVERSE = PIGMENT_MATRIX.clone().invert()
+
+const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1)
+
+const normalizePigmentMass = (mass: PigmentTuple): PigmentTuple => {
+  const sanitized: PigmentTuple = [
+    Number.isFinite(mass[0]) ? Math.max(mass[0], 0) : 0,
+    Number.isFinite(mass[1]) ? Math.max(mass[1], 0) : 0,
+    Number.isFinite(mass[2]) ? Math.max(mass[2], 0) : 0,
+  ]
+  const total = sanitized[0] + sanitized[1] + sanitized[2]
+  if (total <= 1e-6) {
+    return [1 / 3, 1 / 3, 1 / 3]
+  }
+  return [sanitized[0] / total, sanitized[1] / total, sanitized[2] / total]
+}
+
+const pigmentMassToRgb = (mass: PigmentTuple): PigmentTuple => {
+  const normalized = normalizePigmentMass(mass)
+  const color: PigmentTuple = [0, 0, 0]
+  normalized.forEach((weight, index) => {
+    color[0] += PIGMENT_BASE_RGB[index][0] * weight
+    color[1] += PIGMENT_BASE_RGB[index][1] * weight
+    color[2] += PIGMENT_BASE_RGB[index][2] * weight
+  })
+  return [clamp01(color[0]), clamp01(color[1]), clamp01(color[2])]
+}
+
+const rgbToPigmentMass = (rgb: PigmentTuple): PigmentTuple => {
+  const sanitized: PigmentTuple = [
+    clamp01(rgb[0]),
+    clamp01(rgb[1]),
+    clamp01(rgb[2]),
+  ]
+  const vector = new THREE.Vector3(sanitized[0], sanitized[1], sanitized[2])
+  vector.applyMatrix3(PIGMENT_MATRIX_INVERSE)
+  return normalizePigmentMass([vector.x, vector.y, vector.z])
+}
+
+const DEFAULT_PIGMENTS: PigmentSlot[] = [
+  { mass: normalizePigmentMass([1, 0, 0]) },
+  { mass: normalizePigmentMass([0, 1, 0]) },
+  { mass: normalizePigmentMass([0, 0, 1]) },
+]
 
 
 function toolToBrushType(tool: BrushTool): BrushType {
@@ -175,6 +238,30 @@ export default function Home() {
     waterConsumption: 0.28,
     pigmentConsumption: 0.22,
   })
+  const [pigments, setPigments] = useState<PigmentSlot[]>(() =>
+    DEFAULT_PIGMENTS.map((slot) => ({
+      mass: [...slot.mass] as PigmentTuple,
+    })),
+  )
+
+  const pigmentSlots = useMemo<PigmentPickerSlot[]>(
+    () =>
+      pigments.map((slot) => ({
+        mass: slot.mass,
+        color: pigmentMassToRgb(slot.mass),
+      })),
+    [pigments],
+  )
+
+  const handlePigmentColorChange = useCallback((index: number, color: PigmentTuple) => {
+    setPigments((previous) => {
+      if (!previous[index]) return previous
+      return previous.map((slot, slotIndex) => {
+        if (slotIndex !== index) return slot
+        return { mass: rgbToPigmentMass(color) }
+      })
+    })
+  }, [])
 
   const handleBrushChange = useCallback((value: Partial<BrushSettings>) => {
     setBrushSettings((previous) => ({ ...previous, ...value }))
@@ -462,6 +549,10 @@ export default function Home() {
   }
   const { waterCapacityWater, pigmentCapacity, waterConsumption, pigmentConsumption } = reservoirSettings
   const pigmentIndex = tool === 'water' ? -1 : parseInt(tool.slice(-1), 10)
+  const pigmentIndicatorColor =
+    pigmentIndex >= 0 && pigments[pigmentIndex]
+      ? pigmentMassToRgb(pigments[pigmentIndex].mass)
+      : null
 
   const maskAssets = useMemo(() => createBrushMaskAssets(streakDensity), [streakDensity])
 
@@ -477,10 +568,10 @@ export default function Home() {
   const brush = useMemo<ViewportBrush>(
     () => {
       const brushType = toolToBrushType(tool)
-      const color =
-        pigmentIndex >= 0
-          ? (PIGMENT_MASS[pigmentIndex] as [number, number, number])
-          : ([0, 0, 0] as [number, number, number])
+      const pigment = pigmentIndex >= 0 ? pigments[pigmentIndex] : undefined
+      const color = pigment
+        ? ([...pigment.mass] as [number, number, number])
+        : ([0, 0, 0] as [number, number, number])
       const minSize = Math.max(0.01, Math.min(spatterSizeMin, spatterSizeMax))
       const maxSize = Math.max(minSize + 1e-4, Math.max(spatterSizeMin, spatterSizeMax))
       const spread = Math.min(Math.max(spatterSpreadAngle, 0), 360)
@@ -543,6 +634,7 @@ export default function Home() {
       spatterSizeBias,
       spatterRadialBias,
       spatterFlowJitter,
+      pigments,
     ],
   )
 
@@ -651,11 +743,13 @@ export default function Home() {
           paste={pasteSettings}
           spatter={spatterSettings}
           reservoir={reservoirSettings}
+          pigments={pigmentSlots}
           onBrushChange={handleBrushChange}
           onMediumChange={handleMediumChange}
           onPasteChange={handlePasteChange}
           onSpatterChange={handleSpatterChange}
           onReservoirChange={handleReservoirChange}
+          onPigmentColorChange={handlePigmentColorChange}
         />
 
         <div className='relative flex-1'>
@@ -681,9 +775,13 @@ export default function Home() {
               <div className='pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/80 px-3 py-1 text-xs text-slate-200 shadow-lg sm:text-sm'>
                 <span
                   className='inline-flex h-3 w-3 rounded-full border border-white/40 sm:h-4 sm:w-4'
-                  style={{
-                    background: `rgb(${PIGMENT_SWATCH[pigmentIndex][0] * 255}, ${PIGMENT_SWATCH[pigmentIndex][1] * 255}, ${PIGMENT_SWATCH[pigmentIndex][2] * 255})`,
-                  }}
+                  style={
+                    pigmentIndicatorColor
+                      ? {
+                          background: `rgb(${Math.round(pigmentIndicatorColor[0] * 255)}, ${Math.round(pigmentIndicatorColor[1] * 255)}, ${Math.round(pigmentIndicatorColor[2] * 255)})`,
+                        }
+                      : undefined
+                  }
                 />
                 <span>
                   {brush.type === 'spatter'

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Leva, button, useControls } from 'leva'
 import WatercolorViewport, { type ViewportBrush } from '@/components/watercolor/WatercolorViewport'
+import { DEBUG_VIEW_LABELS, DEBUG_VIEW_OPTIONS, type DebugView } from '@/components/watercolor/debugViews'
 import * as THREE from 'three'
 import {
   DEFAULT_ABSORB_EXPONENT,
@@ -383,6 +384,14 @@ export default function Home() {
     },
   })
 
+  const debugControls = useControls('Debug Visualization', {
+    debugView: {
+      label: 'Channel',
+      value: 'composite' as DebugView,
+      options: DEBUG_VIEW_OPTIONS,
+    },
+  })
+
   useControls('Actions', {
     clear: button(() => setClearSignal((value) => value + 1)),
   })
@@ -459,6 +468,7 @@ export default function Home() {
     granulation: boolean
     paperTextureStrength: number
   }
+  const debugView = debugControls.debugView as DebugView
   const {
     enabled: ringEnabled,
     strength: ringStrength,
@@ -682,9 +692,16 @@ export default function Home() {
             brush={brush}
             size={SIM_SIZE}
             clearSignal={clearSignal}
+            debugView={debugView}
           />
-          <div className='pointer-events-none absolute bottom-4 left-4 text-[10px] uppercase tracking-wide text-slate-400 sm:text-xs'>
-            Resolution {SIM_SIZE}x{SIM_SIZE}
+          <div className='pointer-events-none absolute bottom-4 left-4 flex flex-col gap-1 text-[10px] tracking-wide text-slate-400 sm:text-xs'>
+            <span className='uppercase'>Resolution {SIM_SIZE}x{SIM_SIZE}</span>
+            {debugView !== 'composite' && (
+              <span className='inline-flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/70 px-2 py-1 text-[9px] font-semibold text-slate-200 shadow-sm sm:text-[10px]'>
+                <span className='uppercase text-slate-400'>Debug</span>
+                <span className='normal-case text-slate-100'>{DEBUG_VIEW_LABELS[debugView]}</span>
+              </span>
+            )}
           </div>
           {brush.type !== 'water' && pigmentIndex >= 0 && (
             <div className='pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/80 px-3 py-1 text-xs text-slate-200 shadow-lg sm:text-sm'>

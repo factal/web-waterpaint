@@ -121,6 +121,42 @@ export default class WatercolorSimulation {
     return this.paperHeightMap
   }
 
+  get waterHeightTexture(): THREE.Texture {
+    return this.targets.H.read.texture
+  }
+
+  get velocityTexture(): THREE.Texture {
+    return this.targets.UV.read.texture
+  }
+
+  get dissolvedPigmentTexture(): THREE.Texture {
+    return this.targets.C.read.texture
+  }
+
+  get depositedPigmentTexture(): THREE.Texture {
+    return this.targets.DEP.read.texture
+  }
+
+  get wetnessTexture(): THREE.Texture {
+    return this.targets.W.read.texture
+  }
+
+  get binderTexture(): THREE.Texture {
+    return this.targets.B.read.texture
+  }
+
+  get settledPigmentTexture(): THREE.Texture {
+    return this.targets.S.read.texture
+  }
+
+  get paperSizingTexture(): THREE.DataTexture {
+    return this.sizingMap
+  }
+
+  get paperFiberTexture(): THREE.DataTexture {
+    return this.fiberTexture
+  }
+
   // Inject water or pigment into the simulation at a given position.
   splat(brush: BrushSettings) {
     const {

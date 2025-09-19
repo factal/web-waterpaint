@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import View from '@/components/canvas/View'
 import WatercolorScene from './WatercolorScene'
 import WatercolorSimulation, { type BrushType, type SimulationParams } from '@/lib/watercolor/WatercolorSimulation'
+import { type DebugView } from './debugViews'
 import type { Texture } from 'three'
 
 type BrushMaskSettings = {
@@ -44,6 +45,7 @@ type WatercolorViewportProps = {
   clearSignal: number
   className?: string
   onSimulationReady?: (sim: WatercolorSimulation | null) => void
+  debugView?: DebugView
 }
 
 // Clamp to [0, 1] for normalized UV coordinates.
@@ -84,6 +86,7 @@ const WatercolorViewport = ({
   clearSignal,
   className,
   onSimulationReady,
+  debugView = 'composite',
 }: WatercolorViewportProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const simRef = useRef<WatercolorSimulation | null>(null)
@@ -490,7 +493,13 @@ const WatercolorViewport = ({
 
   return (
     <View ref={containerRef} className={className}>
-      <WatercolorScene params={params} size={size} clearSignal={clearSignal} onReady={handleReady} />
+      <WatercolorScene
+        params={params}
+        size={size}
+        clearSignal={clearSignal}
+        onReady={handleReady}
+        debugView={debugView}
+      />
     </View>
   )
 }

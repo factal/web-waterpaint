@@ -44,6 +44,7 @@ The components directory is divided into canvas primitives, DOM layout, cross-tr
   - size: square resolution (defaults to 512) for the internal render targets.
   - clearSignal: bump this number to reset the simulation state.
   - onReady(sim): callback fired when a WatercolorSimulation instance is created or disposed; receives null on teardown.
+  - debugView: selects which internal render target is visualised (final composite, water height, velocity, pigment channels, paper maps, etc.).
 - Exposes the simulation output through an orthographic camera, so you can nest it inside any View driven layout.
 
 ### WatercolorViewport (components/watercolor/WatercolorViewport.tsx)
@@ -55,5 +56,6 @@ The components directory is divided into canvas primitives, DOM layout, cross-tr
   - clearSignal: increment to wipe the simulation.
   - className: optional CSS class applied to the container div.
   - onSimulationReady(sim): receives the WatercolorSimulation instance when it is ready for imperative control.
+  - debugView: forwards the selected debug channel down to WatercolorScene for visual inspection.
 - Attaches pointer listeners directly to the DOM container to track drawing state, convert pointer coordinates to UV space, and schedule splat calls as the cursor moves.
 - Manages a per stroke reservoir so water and pigment naturally deplete and alter the stroke radius and flow over time.

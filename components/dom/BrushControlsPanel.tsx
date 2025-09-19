@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Toggle } from '@/components/ui/toggle'
+import { ChromePicker } from 'react-color'
 
 export type BrushTool =
   | 'water'
@@ -61,6 +62,16 @@ export type BrushReservoirSettings = {
   pigmentConsumption: number
 }
 
+export type PigmentTuple = [number, number, number]
+
+export type PigmentPickerSlot = {
+  mass: PigmentTuple
+  color: PigmentTuple
+}
+
+const PIGMENT_NAMES = ['Pigment C', 'Pigment M', 'Pigment Y']
+const PIGMENT_CHANNEL_LABELS = ['C', 'M', 'Y']
+
 type BrushControlsPanelProps = {
   className?: string
   brush: BrushSettings
@@ -68,11 +79,13 @@ type BrushControlsPanelProps = {
   paste: BrushPasteSettings
   spatter: BrushSpatterSettings
   reservoir: BrushReservoirSettings
+  pigments: PigmentPickerSlot[]
   onBrushChange: (value: Partial<BrushSettings>) => void
   onMediumChange: (value: Partial<BrushMediumSettings>) => void
   onPasteChange: (value: Partial<BrushPasteSettings>) => void
   onSpatterChange: (value: Partial<BrushSpatterSettings>) => void
   onReservoirChange: (value: Partial<BrushReservoirSettings>) => void
+  onPigmentColorChange: (index: number, color: PigmentTuple) => void
 }
 
 type SliderControlProps = {
@@ -87,15 +100,19 @@ type SliderControlProps = {
   transformValue?: (value: number) => number
 }
 
-const TOOL_OPTIONS: Array<{ label: string; value: BrushTool }> = [
+const TOOL_OPTIONS: Array<{ label: string; value: BrushTool; pigmentIndex?: number }> = [
   { label: 'Water', value: 'water' },
-  { label: 'Pigment C', value: 'pigment0' },
-  { label: 'Pigment M', value: 'pigment1' },
-  { label: 'Pigment Y', value: 'pigment2' },
-  { label: 'Spatter C', value: 'spatter0' },
-  { label: 'Spatter M', value: 'spatter1' },
-  { label: 'Spatter Y', value: 'spatter2' },
+  { label: 'Pigment C', value: 'pigment0', pigmentIndex: 0 },
+  { label: 'Pigment M', value: 'pigment1', pigmentIndex: 1 },
+  { label: 'Pigment Y', value: 'pigment2', pigmentIndex: 2 },
+  { label: 'Spatter C', value: 'spatter0', pigmentIndex: 0 },
+  { label: 'Spatter M', value: 'spatter1', pigmentIndex: 1 },
+  { label: 'Spatter Y', value: 'spatter2', pigmentIndex: 2 },
 ]
+
+const toRgb255 = (value: number) => Math.round(Math.min(Math.max(value, 0), 1) * 255)
+
+const formatPercentage = (value: number) => `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}%`
 
 const MASK_OPTIONS: Array<{ label: string; value: BrushMaskId }> = [
   { label: 'Soft Round', value: 'round' },
@@ -158,11 +175,13 @@ const BrushControlsPanel = ({
   paste,
   spatter,
   reservoir,
+  pigments,
   onBrushChange,
   onMediumChange,
   onPasteChange,
   onSpatterChange,
   onReservoirChange,
+  onPigmentColorChange,
 }: BrushControlsPanelProps) => {
   const isPigmentTool = brush.tool.startsWith('pigment')
   const isSpatterTool = brush.tool.startsWith('spatter')
@@ -183,6 +202,9 @@ const BrushControlsPanel = ({
         <TabsList className='bg-slate-800/40 flex flex-wrap gap-2 rounded-2xl p-1'>
           <TabsTrigger value='brush' className='flex-none basis-[calc(50%-0.5rem)] sm:basis-auto sm:flex-1'>
             Brush
+          </TabsTrigger>
+          <TabsTrigger value='pigments' className='flex-none basis-[calc(50%-0.5rem)] sm:basis-auto sm:flex-1'>
+            Pigments
           </TabsTrigger>
           <TabsTrigger value='medium' className='flex-none basis-[calc(50%-0.5rem)] sm:basis-auto sm:flex-1'>
             Medium
@@ -205,20 +227,38 @@ const BrushControlsPanel = ({
               <span className='text-[11px] text-slate-500'>Choose water, pigment, or spatter modes.</span>
             </div>
             <div className='grid grid-cols-2 gap-2 sm:grid-cols-3'>
-              {TOOL_OPTIONS.map((option) => (
-                <Toggle
-                  key={option.value}
-                  variant='outline'
-                  size='sm'
-                  pressed={brush.tool === option.value}
-                  onPressedChange={(pressed) => {
-                    if (pressed) onBrushChange({ tool: option.value })
-                  }}
-                  aria-pressed={brush.tool === option.value}
-                >
-                  {option.label}
-                </Toggle>
-              ))}
+              {TOOL_OPTIONS.map((option) => {
+                const pigment =
+                  typeof option.pigmentIndex === 'number' ? pigments[option.pigmentIndex] ?? null : null
+                const swatchStyle =
+                  pigment != null
+                    ? {
+                        backgroundColor: `rgb(${toRgb255(pigment.color[0])}, ${toRgb255(pigment.color[1])}, ${toRgb255(pigment.color[2])})`,
+                      }
+                    : undefined
+
+                return (
+                  <Toggle
+                    key={option.value}
+                    variant='outline'
+                    size='sm'
+                    pressed={brush.tool === option.value}
+                    onPressedChange={(pressed) => {
+                      if (pressed) onBrushChange({ tool: option.value })
+                    }}
+                    aria-pressed={brush.tool === option.value}
+                  >
+                    {pigment ? (
+                      <span className='flex items-center gap-2'>
+                        <span className='h-2.5 w-2.5 rounded-full border border-white/30' style={swatchStyle} />
+                        <span>{option.label}</span>
+                      </span>
+                    ) : (
+                      option.label
+                    )}
+                  </Toggle>
+                )
+              })}
             </div>
           </div>
 
@@ -283,6 +323,72 @@ const BrushControlsPanel = ({
             step={0.01}
             onChange={(value) => onBrushChange({ streakDensity: value })}
           />
+        </TabsContent>
+
+        <TabsContent value='pigments' className='space-y-6 pt-4'>
+          <div className='space-y-4'>
+            <p className='text-xs text-slate-400'>Select a target colour for each slot to remap the cyan, magenta, and yellow channel mix. Values are normalized to 100%.</p>
+            {pigments.map((slot, index) => {
+              const label = PIGMENT_NAMES[index] ?? `Pigment ${index + 1}`
+              const swatchStyle = {
+                backgroundColor: `rgb(${toRgb255(slot.color[0])}, ${toRgb255(slot.color[1])}, ${toRgb255(slot.color[2])})`,
+              }
+
+              return (
+                <div
+                  key={`pigment-${index}`}
+                  className='space-y-4 rounded-2xl border border-slate-700/40 bg-slate-900/50 p-4'
+                >
+                  <div className='flex items-center justify-between gap-3'>
+                    <div className='space-y-1'>
+                      <p className='text-sm font-semibold text-slate-100'>{label}</p>
+                      <p className='text-xs text-slate-500'>Normalized CMY mix</p>
+                    </div>
+                    <span className='inline-flex h-4 w-4 rounded-full border border-white/40' style={swatchStyle} />
+                  </div>
+
+                  <div className='rounded-2xl border border-slate-700/40 bg-slate-950/60 p-3'>
+                    <ChromePicker
+                      disableAlpha
+                      color={{
+                        r: toRgb255(slot.color[0]),
+                        g: toRgb255(slot.color[1]),
+                        b: toRgb255(slot.color[2]),
+                      }}
+                      onChange={(value) => {
+                        const { r, g, b } = value.rgb
+                        onPigmentColorChange(index, [r / 255, g / 255, b / 255])
+                      }}
+                      styles={{
+                        default: {
+                          picker: {
+                            background: 'transparent',
+                            boxShadow: 'none',
+                          },
+                        },
+                      }}
+                    />
+                  </div>
+
+                  <div className='grid grid-cols-3 gap-2 text-xs text-slate-400'>
+                    {PIGMENT_CHANNEL_LABELS.map((channel, channelIndex) => (
+                      <div
+                        key={`${channel}-${index}`}
+                        className='rounded-xl border border-slate-700/40 bg-slate-900/60 px-2 py-2 text-center'
+                      >
+                        <span className='block text-[10px] font-semibold uppercase tracking-wide text-slate-500'>
+                          {channel}
+                        </span>
+                        <span className='block text-sm font-semibold text-slate-200'>
+                          {formatPercentage(slot.mass[channelIndex] ?? 0)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </TabsContent>
 
         <TabsContent value='medium' className='space-y-6 pt-4'>

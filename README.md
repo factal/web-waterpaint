@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Web Waterpaint
 
-## Getting Started
+Interactive watercolor painting demo built on Next.js, Three.js, and GPU compute shaders. The app couples a shallow-water fluid solver, pigment transport, and paper optics so brush strokes bloom, diffuse, and dry like real media.
 
-First, run the development server:
+## Overview
+- Renders through the Next.js App Router (`app/`) with a React Three Fiber canvas and an overlay UI for brush controls powered by Leva.
+- `lib/watercolor/WatercolorSimulation.ts` orchestrates the GPU pipeline across water height, velocity, pigment, binder, wetness, and paper granulation buffers.
+- Procedural paper height, fibre, and sizing textures are generated at runtime to drive drybrush masking, capillary flow, and absorption.
+- Shaders live in `lib/watercolor/shaders.ts`; materials and render targets are centralised in `lib/watercolor/materials.ts` and `lib/watercolor/targets.ts` for deterministic setup.
+- Docs in `docs/overview.md` describe the full frame pipeline, binder dynamics, and parameter panels exposed in the UI.
+
+## Prerequisites
+- Node.js 20 or newer (matches the version range supported by Next 15 and TypeScript tooling in `package.json`).
+- npm 9+ (ships with recent Node releases).
+
+Install dependencies once:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Development
+- Start the hot-reloading dev server with Turbopack:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+  ```bash
+  npm run dev
+  ```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+  Visit http://localhost:3000 and use the brush selector panel to lay down water, pigments, and spatter. Toggle debug views to inspect intermediate buffers while iterating on shader changes.
 
-## Learn More
+- Common scripts:
+  - `npm run build` - create an optimised production bundle (also uses Turbopack).
+  - `npm run start` - serve the built app for deployment validation.
+  - `npm run lint` - run ESLint with the Next config; keep it clean before opening a PR.
 
-To learn more about Next.js, take a look at the following resources:
+Manual verification is currently the primary test path. When sharing changes, capture the scenarios you exercised (e.g. wet-on-wet blooms, drybrush strokes, evaporation rings) and any browsers tested.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project Layout
+- `app/` - Next.js routing, layout chrome, and the entry component that instantiates the watercolor viewport.
+- `components/` - UI composition split across `canvas/`, `watercolor/`, `helpers/`, and `dom/` for overlays.
+- `lib/watercolor/` - Simulation state, shader sources, GPU materials, and shared constants/types.
+- `docs/` - Reference notes covering simulation internals such as target layouts and solver stages.
+- `public/` - Static assets accessible through the `@/` alias.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Coding Guidelines
+- Strict TypeScript throughout; export types explicitly and prefer pure helpers for shared logic.
+- Use two-space indentation, trailing commas in multiline literals, and omit semicolons to match existing files.
+- React components use PascalCase names, hooks use the `use` prefix, and shader or material modules favour descriptive nouns (e.g. `CapillaryFlowMaterial`).
+- Import internal modules via the `@/` alias instead of long relative paths.
 
-## Deploy on Vercel
+## Contributing
+- Run the lint script and document manual test coverage before raising a PR.
+- Keep commits focused with short imperative subjects (`Add paper sizing variations`).
+- Coordinate with simulation owners when modifying `lib/watercolor/` or shader files, and include before/after captures for visual or performance tweaks.
+- Reference related docs updates or issues in the PR body so reviewers can trace context.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+For deeper technical background, start with `docs/overview.md` and the inline comments across `lib/watercolor/` modules.

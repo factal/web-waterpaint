@@ -460,17 +460,16 @@ AbsorbResult computeAbsorb(vec2 uv) {
   float decay = inversesqrt(timeTerm);
   float baseAbsorb = max(uAbsorb * decay, uAbsorbFloor);
   float sizingFactor = clamp(1.0 + uSizingInfluence * (0.5 - sizing), 0.1, 2.0);
-  float absorbAmount = baseAbsorb * humidityFactor * sizingFactor;
+  float absorbDemand = baseAbsorb * humidityFactor * sizingFactor;
   float evapBase = uEvap * sqrt(max(h, 0.0));
-  float evapRate = evapBase * mix(1.0, humidity, uHumidity);
-  float totalOut = absorbAmount + evapRate;
-
-  float newH = max(h - totalOut, 0.0);
-  float remRaw = totalOut / max(h, 1e-6);
-  if (h <= 1e-6) {
-    remRaw = 1.0;
-  }
-  float remFrac = clamp(min(1.0, remRaw), 0.0, 1.0);
+  float evapDemand = evapBase * mix(1.0, humidity, uHumidity);
+  float totalDemand = absorbDemand + evapDemand;
+  float available = max(h, 0.0);
+  float demandScale = totalDemand > 1e-6 ? min(available / totalDemand, 1.0) : 0.0;
+  float absorbAmount = absorbDemand * demandScale;
+  float removal = totalDemand * demandScale;
+  float newH = max(available - removal, 0.0);
+  float remFrac = available > 1e-6 ? clamp(removal / available, 0.0, 1.0) : 0.0;
   float valleyFactor = 1.0 + uPaperHeightStrength * (0.5 - paperHeight);
   valleyFactor = clamp(valleyFactor, 0.1, 3.0);
   float depBase = clamp(remFrac * (0.5 + edgeBias) + uDepBase * edgeBias, 0.0, 1.0);
@@ -763,9 +762,10 @@ void main() {
   float neighborAvg = (wParaPlus + wParaMinus + wPerpPlus + wPerpMinus) * 0.25;
   float noiseKick = (neighborAvg - w) * signedNoise * fringeIntensity * 0.35;
   lap += noiseKick;
-
   float diffusion = uStrength * lap;
-  float replenish = uReplenish * (1.0 - w);
+  float wetNeighborhood = max(w, neighborAvg);
+  float replenishMask = smoothstep(1e-4, 0.02, wetNeighborhood);
+  float replenish = uReplenish * (1.0 - w) * replenishMask;
   float newW = w + uDt * (diffusion + replenish);
 
   float thin = 1.0 - smoothstep(0.0, uFringeThreshold, w);
@@ -774,7 +774,11 @@ void main() {
   float dropProb = clamp(fringeIntensity * thin * isolation * 0.85, 0.0, 1.0);
   float random = hash(vUv * (freq * 1.37 + 3.1) + fiber.xy);
   float drop = step(random, dropProb);
-  newW = mix(newW, 0.0, drop);
+  
+  // newW = mix(newW, 0., drop);
+  // this implementation causes patchy artifacts in the wetness.
+  // temporally disabled
+  newW = mix(newW, 0.0, 0.);
 
   newW = clamp(newW, 0.0, 1.0);
   fragColor = vec4(newW, 0.0, 0.0, 1.0);

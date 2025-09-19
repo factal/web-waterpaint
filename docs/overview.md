@@ -27,11 +27,11 @@ All simulation textures use half floats so they remain filterable on WebGL2.
 1. **Brush splat** – Water, binder, and optional pigment are injected using Gaussian falloffs. Radial velocity impulses emulate brush agitation. When the active brush is in a drybrush regime, splat shaders gate injection by sampling `paperHeight` and applying a smooth dry threshold driven by the brush’s wetness so that only the highest paper ridges receive paint.
 2. **Binder evolution** – The viscoelastic binder field is advected with the flow, diffused, and damped. Binder gradients feed the `binderForces` pass, which applies elastic spring forces and viscosity-dependent damping to the velocity field.
 3. **Pressure projection** – Stam (1999) projection solves a Poisson equation to enforce incompressibility before the next transport step.
-4. **Surface tension relaxation** – A curvature-driven pass analyses `H` with a Laplacian/neighbor mask, suppresses regions where the flow is already energetic, and tugs slender filaments toward their centreline. Sub-threshold strands can snap entirely to prevent numerical cobwebs.
+4. **Surface tension relaxation** – The `SURFACE_TENSION_FRAGMENT` curvature pass analyses `H` with a Laplacian/neighbor mask, suppresses cells whose speed exceeds `uVelocityLimit`, and tugs slender filaments toward their centreline. When the `uSnapStrength` gate fires, sub-threshold strands can snap to prevent numerical cobwebs.
 5. **Fluid transport** – Semi-Lagrangian advection updates velocity (with slope-driven gravity), water height (including binder buoyancy), and dissolved pigment.
 6. **Pigment diffusion** – A dedicated Fickian diffusion pass integrates `∂C/∂t = D∇²C`, ensuring pigment blurs even in stagnant water. The coefficient is exposed through the simulation constants.
 7. **Absorption, evaporation, and granulation** – The absorb suite reads the current state and returns updated `H`, `C`, `DEP`, `W`, and `S`. Lucas–Washburn dynamics drive absorption using `A = A₀·(1 - w)^{β}` with `β = 0.5` and a temporal decay term `1 / √(t + t₀)`. Edge gradients add blooms, pigment settling feeds the granulation buffer, and paper-height-dependent weighting biases deposition toward microscopic valleys to reproduce fine grain.
-8. **Paper diffusion** – Moisture diffuses anisotropically along a procedural fibre field. The shader identifies wet fronts, injects fibre-aligned high-frequency noise, and feathers isolated droplets so edges stay lively while drier paper receives a portion of the absorbed water.
+8. **Paper diffusion** – Moisture diffuses anisotropically along a procedural fibre field. The revised `PAPER_DIFFUSION_FRAGMENT` detects wet fronts, injects fibre-aligned high-frequency noise, and occasionally culls isolated droplets so edges stay lively while drier paper receives a portion of the absorbed water.
 9. **Kubelka–Munk composite** – Deposited pigment is converted into optical coefficients and shaded against the paper colour with a finite-thickness KM approximation.
 
 Between the splat and transport phases, the simulation optionally performs a **rewetting** micro-pass. Whenever a new splat adds
@@ -51,7 +51,9 @@ Binder parameters (injection, diffusion, decay, elasticity, viscosity, buoyancy)
 
 ## Surface Tension Relaxation
 
-Immediately after projection the solver evaluates a capillary relaxation pass. The shader samples `H`, `W`, and `UV`, builds a Laplacian of the local height field, and weights it by neighbour occupancy so that only thin, weakly supported filaments are affected. Regions that are already moving quickly (`|UV| > uVelocityLimit`) are ignored to avoid fighting strong advection. The remaining strands receive an inward pull proportional to `uStrength × curvature × wetness`, and segments thinner than `uBreakThreshold` can be snapped away using `uSnapStrength` to clear numerical cobwebs.
+Immediately after projection `WatercolorSimulation.step` calls `applySurfaceTension`, swapping the `H` ping-pong target and rendering the dedicated `SURFACE_TENSION_FRAGMENT`. The shader samples `H`, `W`, and `UV`, builds a Laplacian of the local height field, and multiplies it by a neighbour occupancy mask so that only thin, weakly supported filaments are affected. Wetting and velocity gates (`wetGate`, `velocityGate`) ensure dry patches or cells moving faster than `uVelocityLimit` remain untouched. The remaining strands receive an inward pull proportional to `uStrength × curvature × wetGate × uDt`, gently retracting the protrusions before advection.
+
+After the contraction pass computes a tentative height, the shader evaluates a second isolation mask. Segments thinner than `uBreakThreshold` can be blended toward zero using `uSnapStrength`, letting very fine filaments snap apart instead of lingering as floating-point noise.
 
 Artist-facing controls map to `SimulationParams.surfaceTension`:
 
@@ -69,6 +71,13 @@ Defaults for the block live in `DEFAULT_SURFACE_TENSION_PARAMS`.
 Paper moisture now carries an explicit fringe model layered on top of the base diffusion. The updated `PAPER_DIFFUSION_FRAGMENT` samples the fibre texture to build a tangent frame, measures wetness gradients, and treats steep transitions as active wet fronts. A fibre-aligned noise field perturbs the parallel diffusion coefficient while damping the perpendicular component, allowing the striations in the paper to steer feathered blooms. The same directional noise drives a stochastic culling pass that occasionally zeroes out thin, isolated cells so drying pools break into ragged filaments instead of uniform bands. The result is a capillary fringe that clings to the fibre direction and naturally dissolves as the sheet dries.
 
 Uniforms `uFringeStrength`, `uFringeThreshold`, and `uFringeNoiseScale` control the behaviour and are populated from `SimulationParams.capillaryFringe`. Default values live in `DEFAULT_FRINGE_PARAMS`, keeping the effect active but gentle out of the box.
+
+Artist-facing controls map to `SimulationParams.capillaryFringe`:
+
+- `enabled` toggles the perturbation stage for cost-sensitive scenes.
+- `strength` scales the fibre-aligned modulation applied to the base diffusion coefficients.
+- `threshold` defines how sharp a wetness gradient must be before the fringe masks engage.
+- `noiseScale` selects the frequency of the directional noise that carves out the feathery edge pattern.
 
 ## Pigment Diffusion
 

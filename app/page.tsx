@@ -13,6 +13,7 @@ import {
   DEFAULT_SIZING_INFLUENCE,
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
+  DEFAULT_RING_PARAMS,
   type BrushType,
   type SimulationParams,
 } from '@/lib/watercolor/WatercolorSimulation'
@@ -325,6 +326,38 @@ export default function Home() {
     },
   })
 
+  const ringControls = useControls('Evaporation Rings', {
+    enabled: { label: 'Enable Rings', value: DEFAULT_RING_PARAMS.enabled },
+    strength: {
+      label: 'Strength',
+      value: DEFAULT_RING_PARAMS.strength,
+      min: 0,
+      max: 6,
+      step: 0.05,
+    },
+    filmThreshold: {
+      label: 'Film Threshold',
+      value: DEFAULT_RING_PARAMS.filmThreshold,
+      min: 0.01,
+      max: 0.2,
+      step: 0.005,
+    },
+    filmFeather: {
+      label: 'Film Feather',
+      value: DEFAULT_RING_PARAMS.filmFeather,
+      min: 0.01,
+      max: 0.12,
+      step: 0.005,
+    },
+    gradientScale: {
+      label: 'Gradient Scale',
+      value: DEFAULT_RING_PARAMS.gradientScale,
+      min: 1,
+      max: 24,
+      step: 0.5,
+    },
+  })
+
   const fringeControls = useControls('Capillary Fringe', {
     enabled: { label: 'Enable Fringe', value: DEFAULT_FRINGE_PARAMS.enabled },
     strength: {
@@ -425,6 +458,19 @@ export default function Home() {
     stateAbsorption: boolean
     granulation: boolean
     paperTextureStrength: number
+  }
+  const {
+    enabled: ringEnabled,
+    strength: ringStrength,
+    filmThreshold: ringFilmThreshold,
+    filmFeather: ringFilmFeather,
+    gradientScale: ringGradientScale,
+  } = ringControls as {
+    enabled: boolean
+    strength: number
+    filmThreshold: number
+    filmFeather: number
+    gradientScale: number
   }
   const {
     enabled: fringeEnabled,
@@ -567,6 +613,13 @@ export default function Home() {
       threshold: fringeThreshold,
       noiseScale: fringeNoiseScale,
     },
+    evaporationRings: {
+      enabled: ringEnabled,
+      strength: ringStrength,
+      filmThreshold: ringFilmThreshold,
+      filmFeather: ringFilmFeather,
+      gradientScale: ringGradientScale,
+    },
     reservoir: {
       waterCapacityWater,
       waterCapacityPigment: waterLoad,
@@ -604,6 +657,11 @@ export default function Home() {
     fringeStrength,
     fringeThreshold,
     fringeNoiseScale,
+    ringEnabled,
+    ringStrength,
+    ringFilmThreshold,
+    ringFilmFeather,
+    ringGradientScale,
     waterCapacityWater,
     waterLoad,
     pigmentCapacity,

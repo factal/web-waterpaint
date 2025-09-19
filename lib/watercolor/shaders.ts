@@ -551,6 +551,88 @@ void main() {
 }
 `
 
+export const EVAPORATION_RING_FRAGMENT = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uDeposits;
+uniform sampler2D uWet;
+uniform sampler2D uHeight;
+uniform vec2 uTexel;
+uniform float uStrength;
+uniform float uDt;
+uniform float uFilmThreshold;
+uniform float uFilmFeather;
+uniform float uGradientScale;
+
+vec3 sampleDeposits(vec2 uv) {
+  return texture(uDeposits, uv).rgb;
+}
+
+float sampleWet(vec2 uv) {
+  return texture(uWet, uv).r;
+}
+
+float sampleHeight(vec2 uv) {
+  return texture(uHeight, uv).r;
+}
+
+float filmMask(float h) {
+  return 1.0 - smoothstep(uFilmThreshold, uFilmThreshold + uFilmFeather, h);
+}
+
+void main() {
+  vec3 dep = sampleDeposits(vUv);
+  float wet = clamp(sampleWet(vUv), 0.0, 1.0);
+  float height = sampleHeight(vUv);
+  float localThin = filmMask(height);
+  float ringFactor = max(uStrength, 0.0) * max(uDt, 0.0);
+  if (ringFactor <= 0.0) {
+    fragColor = vec4(dep, 1.0);
+    return;
+  }
+
+  vec2 offsets[4] = vec2[4](
+    vec2(-uTexel.x, 0.0),
+    vec2(uTexel.x, 0.0),
+    vec2(0.0, -uTexel.y),
+    vec2(0.0, uTexel.y)
+  );
+
+  vec3 incoming = vec3(0.0);
+  float outgoing = 0.0;
+  float gradScale = max(uGradientScale, 0.0);
+
+  for (int i = 0; i < 4; i++) {
+    vec2 off = offsets[i];
+    float wetN = clamp(sampleWet(vUv + off), 0.0, 1.0);
+    float heightN = sampleHeight(vUv + off);
+    vec3 depN = sampleDeposits(vUv + off);
+
+    float thinN = filmMask(heightN);
+    float pairThin = max(localThin, thinN);
+    float diff = wet - wetN;
+    float magnitude = abs(diff);
+    float gradientWeight = gradScale > 0.0 ? clamp(magnitude * gradScale, 0.0, 1.0) : 0.0;
+    float drynessPair = clamp(1.0 - min(wet, wetN), 0.0, 1.0);
+    float weight = pairThin * gradientWeight * drynessPair;
+    if (weight <= 0.0) {
+      continue;
+    }
+
+    if (diff > 0.0) {
+      outgoing += weight * diff;
+    } else if (diff < 0.0) {
+      incoming += weight * (-diff) * depN;
+    }
+  }
+
+  vec3 delta = ringFactor * (incoming - dep * outgoing);
+  vec3 newDep = max(dep + delta, vec3(0.0));
+  fragColor = vec4(newDep, 1.0);
+}
+`
+
 export const PRESSURE_DIVERGENCE_FRAGMENT = `
 precision highp float;
 in vec2 vUv;

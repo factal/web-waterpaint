@@ -22,38 +22,24 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uSource;
-uniform vec2 uCenter;
-uniform float uRadius;
+uniform sampler2D uMask;
 uniform float uFlow;
+uniform float uMaskStrength;
+uniform float uMaskFlow;
 uniform sampler2D uPaperHeight;
 uniform float uDryThreshold;
 uniform float uDryInfluence;
-uniform sampler2D uBristleMask;
-uniform vec2 uMaskScale;
-uniform float uMaskRotation;
-uniform float uMaskStrength;
-mat2 maskRotationMatrix(float angle) {
-  float s = sin(angle);
-  float c = cos(angle);
-  return mat2(c, -s, s, c);
+
+float maskCoverage(vec2 uv) {
+  float coverage = texture(uMask, uv).r;
+  float strength = clamp(uMaskStrength, 0.0, 2.0);
+  return clamp(coverage * strength, 0.0, 1.0);
 }
-float sampleBrushMask(vec2 uv, float radius) {
-  float r = max(radius, 1e-6);
-  vec2 local = (uv - uCenter) / r;
-  vec2 rotated = maskRotationMatrix(uMaskRotation) * local;
-  vec2 scaled = rotated * uMaskScale;
-  vec2 maskUv = scaled * 0.5 + vec2(0.5);
-  float mask = texture(uBristleMask, maskUv).r;
-  float influence = clamp(uMaskStrength, 0.0, 1.0);
-  return mix(1.0, mask, influence);
+
+float effectiveFlow() {
+  return max(uFlow * uMaskFlow, 0.0);
 }
-float splatFalloff(vec2 uv, float radius) {
-  vec2 delta = uv - uCenter;
-  float r = max(radius, 1e-6);
-  float gaussian = exp(-9.0 * dot(delta, delta) / (r * r + 1e-6));
-  float mask = sampleBrushMask(uv, radius);
-  return gaussian * mask;
-}
+
 float paperDryGate(vec2 uv, float flow) {
   float height = texture(uPaperHeight, uv).r;
   float wetness = clamp(flow, 0.0, 1.0);
@@ -64,29 +50,71 @@ float paperDryGate(vec2 uv, float flow) {
 }
 `
 
+export const STROKE_MASK_FRAGMENT = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uSource;
+uniform sampler2D uBristleMask;
+uniform vec2 uCenter;
+uniform float uRadius;
+uniform vec2 uMaskScale;
+uniform float uMaskRotation;
+uniform float uMaskStrength;
+
+mat2 maskRotationMatrix(float angle) {
+  float s = sin(angle);
+  float c = cos(angle);
+  return mat2(c, -s, s, c);
+}
+
+float stampCoverage(vec2 uv) {
+  float r = max(uRadius, 1e-6);
+  vec2 local = (uv - uCenter) / r;
+  mat2 rot = maskRotationMatrix(uMaskRotation);
+  vec2 rotated = rot * local;
+  vec2 scaled = rotated * uMaskScale;
+  vec2 maskUv = scaled * 0.5 + vec2(0.5);
+  if (maskUv.x < 0.0 || maskUv.x > 1.0 || maskUv.y < 0.0 || maskUv.y > 1.0) {
+    return 0.0;
+  }
+  float mask = texture(uBristleMask, maskUv).r;
+  float strength = clamp(uMaskStrength, 0.0, 2.0);
+  return clamp(mask * strength, 0.0, 1.0);
+}
+
+void main() {
+  float prev = texture(uSource, vUv).r;
+  float stamp = stampCoverage(vUv);
+  float coverage = max(prev, stamp);
+  fragColor = vec4(coverage, 0.0, 0.0, 1.0);
+}
+`
+
 export const SPLAT_HEIGHT_FRAGMENT = `
 ${SPLAT_COMMON}
 uniform float uToolType;
 void main() {
   vec4 src = texture(uSource, vUv);
-  float fall = splatFalloff(vUv, uRadius);
-  float gate = paperDryGate(vUv, uFlow);
+  float flow = effectiveFlow();
+  float coverage = maskCoverage(vUv);
+  float gate = paperDryGate(vUv, flow);
   float waterMul = mix(1.0, 0.7, step(0.5, uToolType));
-  src.r += waterMul * uFlow * fall * gate;
+  src.r += waterMul * flow * coverage * gate;
   fragColor = vec4(src.r, 0.0, 0.0, 1.0);
 }
 `
 
 export const SPLAT_VELOCITY_FRAGMENT = `
 ${SPLAT_COMMON}
+uniform vec2 uVelocityVector;
+uniform float uVelocityStrength;
 void main() {
   vec4 src = texture(uSource, vUv);
-  vec2 delta = vUv - uCenter;
-  float fall = splatFalloff(vUv, uRadius);
-  float gate = paperDryGate(vUv, uFlow);
-  float len = length(delta);
-  vec2 dir = len > 1e-6 ? delta / len : vec2(0.0);
-  vec2 dv = dir * (0.7 * uFlow * fall * gate);
+  float flow = effectiveFlow();
+  float coverage = maskCoverage(vUv);
+  float gate = paperDryGate(vUv, flow);
+  vec2 dv = uVelocityVector * (uVelocityStrength * coverage * gate);
   fragColor = vec4(src.xy + dv, 0.0, 1.0);
 }
 `
@@ -99,13 +127,14 @@ uniform float uLowSolvent;
 uniform float uBoost;
 void main() {
   vec4 src = texture(uSource, vUv);
-  float fall = splatFalloff(vUv, uRadius);
-  float gate = paperDryGate(vUv, uFlow);
+  float flow = effectiveFlow();
+  float coverage = maskCoverage(vUv);
+  float gate = paperDryGate(vUv, flow);
   float pigmentMask = step(0.5, uToolType);
   float solvent = clamp(uLowSolvent, 0.0, 1.0);
   float boost = mix(1.0, max(uBoost, 1.0), solvent);
-  float baseFlow = mix(uFlow, max(uFlow, 0.12), solvent);
-  vec3 add = uPigment * (baseFlow * boost * fall * pigmentMask * gate);
+  float baseFlow = mix(flow, max(flow, 0.12), solvent);
+  vec3 add = uPigment * (baseFlow * boost * coverage * pigmentMask * gate);
   fragColor = vec4(src.rgb + add, src.a);
 }
 `
@@ -117,12 +146,13 @@ uniform float uBinderStrength;
 uniform float uLowSolvent;
 void main() {
   vec4 src = texture(uSource, vUv);
-  float fall = splatFalloff(vUv, uRadius);
-  float gate = paperDryGate(vUv, uFlow);
+  float flow = effectiveFlow();
+  float coverage = maskCoverage(vUv);
+  float gate = paperDryGate(vUv, flow);
   float mask = step(0.5, uToolType);
   float solvent = clamp(uLowSolvent, 0.0, 1.0);
-  float baseFlow = mix(uFlow, max(uFlow, 0.35), solvent);
-  float add = uBinderStrength * baseFlow * fall * mask * gate;
+  float baseFlow = mix(flow, max(flow, 0.35), solvent);
+  float add = uBinderStrength * baseFlow * coverage * mask * gate;
   fragColor = vec4(src.r + add, 0.0, 0.0, 1.0);
 }
 `
@@ -134,12 +164,12 @@ uniform float uLowSolvent;
 uniform float uBoost;
 void main() {
   vec4 src = texture(uSource, vUv);
-  float fall = splatFalloff(vUv, uRadius);
-  float gate = paperDryGate(vUv, uFlow);
+  float flow = effectiveFlow();
+  float coverage = maskCoverage(vUv);
   float solvent = clamp(uLowSolvent, 0.0, 1.0);
   float boost = mix(1.0, max(uBoost, 1.0), solvent);
-  float baseFlow = mix(uFlow, max(uFlow, 0.15), solvent);
-  vec3 add = uPigment * (baseFlow * boost * solvent * fall * gate);
+  float baseFlow = mix(flow, max(flow, 0.15), solvent);
+  vec3 add = uPigment * (baseFlow * boost * solvent * coverage);
   fragColor = vec4(src.rgb + add, 1.0);
 }
 `
@@ -152,8 +182,9 @@ uniform vec3 uRewetPerChannel;
 void main() {
   vec4 src = texture(uSource, vUv);
   vec3 dep = texture(uDeposits, vUv).rgb;
-  float fall = splatFalloff(vUv, uRadius);
-  float fraction = clamp(uRewetStrength * uFlow * fall, 0.0, 1.0);
+  float coverage = maskCoverage(vUv);
+  float flow = effectiveFlow();
+  float fraction = clamp(uRewetStrength * flow * coverage, 0.0, 1.0);
   vec3 weights = clamp(uRewetPerChannel, vec3(0.0), vec3(1.0));
   vec3 dissolved = min(dep, dep * (weights * fraction));
   fragColor = vec4(src.rgb + dissolved, src.a);
@@ -167,8 +198,9 @@ uniform vec3 uRewetPerChannel;
 void main() {
   vec4 src = texture(uSource, vUv);
   vec3 dep = src.rgb;
-  float fall = splatFalloff(vUv, uRadius);
-  float fraction = clamp(uRewetStrength * uFlow * fall, 0.0, 1.0);
+  float coverage = maskCoverage(vUv);
+  float flow = effectiveFlow();
+  float fraction = clamp(uRewetStrength * flow * coverage, 0.0, 1.0);
   vec3 weights = clamp(uRewetPerChannel, vec3(0.0), vec3(1.0));
   vec3 dissolved = min(dep, dep * (weights * fraction));
   vec3 newDep = max(dep - dissolved, vec3(0.0));

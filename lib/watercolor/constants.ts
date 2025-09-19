@@ -1,6 +1,11 @@
 import * as THREE from 'three'
 
-import { type BinderParams, type CapillaryFringeParams, type SurfaceTensionParams } from './types'
+import {
+  type BinderParams,
+  type CapillaryFringeParams,
+  type EvaporationRingParams,
+  type SurfaceTensionParams,
+} from './types'
 
 export const DEFAULT_DT = 1 / 90
 export const DEPOSITION_BASE = 0.02
@@ -58,4 +63,12 @@ export const DEFAULT_FRINGE_PARAMS: CapillaryFringeParams = {
   strength: 0.65,
   threshold: 0.18,
   noiseScale: 32,
+}
+
+export const DEFAULT_RING_PARAMS: EvaporationRingParams = {
+  enabled: true,
+  strength: 2.4,
+  filmThreshold: 0.075,
+  filmFeather: 0.045,
+  gradientScale: 12,
 }

@@ -30,7 +30,7 @@ All simulation textures use half floats so they remain filterable on WebGL2.
 4. **Surface tension relaxation** – A curvature-driven pass analyses `H` with a Laplacian/neighbor mask, suppresses regions where the flow is already energetic, and tugs slender filaments toward their centreline. Sub-threshold strands can snap entirely to prevent numerical cobwebs.
 5. **Fluid transport** – Semi-Lagrangian advection updates velocity (with slope-driven gravity), water height (including binder buoyancy), and dissolved pigment.
 6. **Pigment diffusion** – A dedicated Fickian diffusion pass integrates `∂C/∂t = D∇²C`, ensuring pigment blurs even in stagnant water. The coefficient is exposed through the simulation constants.
-7. **Absorption, evaporation, and granulation** – The absorb suite reads the current state and returns updated `H`, `C`, `DEP`, `W`, and `S`. Lucas–Washburn dynamics drive absorption using `A = A₀·(1 - w)^{β}` with `β = 0.5` and a temporal decay term `1 / √(t + t₀)`. Edge gradients add blooms, pigment settling feeds the granulation buffer, and paper-height-dependent weighting biases deposition toward microscopic valleys to reproduce fine grain.
+7. **Absorption, evaporation, and granulation** – The absorb suite reads the current state and returns updated `H`, `C`, `DEP`, `W`, and `S`. Lucas–Washburn dynamics drive absorption using `A = A₀·(1 - w)^{β}` with `β = 0.5` and a temporal decay term `1 / √(t + t₀)`. Edge gradients add blooms, pigment settling feeds the granulation buffer, and paper-height-dependent weighting biases deposition toward microscopic valleys to reproduce fine grain. As pooled water thins, a dedicated evaporation-ring redistribution pass siphons pigment toward drying perimeters so isolated droplets dry with a pronounced coffee-ring fringe while preserving the interior’s lighter wash.
 8. **Paper diffusion** – Moisture diffuses anisotropically along a procedural fibre field. The shader identifies wet fronts, injects fibre-aligned high-frequency noise, and feathers isolated droplets so edges stay lively while drier paper receives a portion of the absorbed water.
 9. **Kubelka–Munk composite** – Deposited pigment is converted into optical coefficients and shaded against the paper colour with a finite-thickness KM approximation.
 
@@ -92,6 +92,8 @@ Absorption now follows the Lucas–Washburn law. The absorb shader applies:
 
 Wetting irregularities come from a dedicated sizing map. A low-frequency noise texture stored in `uSizingMap` slightly boosts or suppresses the absorption term per fragment via `uSizingInfluence`. Darker sizing patches (heavier sizing) reduce the `A₀` flux while lighter regions accelerate uptake, yielding ragged wet fronts and subtle variations in edge darkening without incurring extra passes.
 
+As the fluid film approaches zero thickness, the evaporation-ring pass monitors wetness gradients and pushes a fraction of the freshly deposited pigment toward drying boundaries. Transfer weights respect local moisture and film thickness so pigment mass is conserved, and the result is a coffee-ring fringe with lighter centres reminiscent of a drying puddle.
+
 Evaporation retains its humidity coupling, and granulation/backrun logic now runs against the diffusion-updated pigment field, producing softer, more organic blooms.
 
 ## Granulation Reservoir (`S`)
@@ -141,6 +143,7 @@ Leva panels in the demo map directly to `SimulationParams` fields:
 - **Binder** – Runtime overrides for binder injection, diffusion, decay, elasticity, viscosity, and buoyancy.
 - **Surface Tension** – Enable/disable the filament relaxation pass and tune strength, neighbour thresholding, snapping, and the velocity gate.
 - **Capillary Fringe** – Toggle the fringe-aware diffusion pass and tune strength, wet-front thresholding, and the fibre-aligned noise scale that carves feathered edges.
+- **Evaporation Rings** – Toggle the coffee-ring redistribution pass and adjust strength, film activation thresholds, and the gradient weighting that decides how aggressively pigment is pulled toward drying rims.
 - **Brush Reservoir** – Water/pigment capacities and per-stamp consumption rates.
 - **Pigment Separation** – RGB diffusion/settling overrides and per-pigment presets.
 - **Simulation Features** – Toggles for state-dependent absorption, paper-texture-driven granulation, and rewetting behaviour.

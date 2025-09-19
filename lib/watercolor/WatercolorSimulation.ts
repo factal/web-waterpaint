@@ -18,11 +18,13 @@ import {
   PIGMENT_DIFFUSION_COEFF,
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
+  DEFAULT_RING_PARAMS,
 } from './constants'
 import {
   type BinderParams,
   type BrushSettings,
   type CapillaryFringeParams,
+  type EvaporationRingParams,
   type MaterialMap,
   type PingPongTarget,
   type SimulationParams,
@@ -300,6 +302,7 @@ export default class WatercolorSimulation {
       binder,
       surfaceTension,
       capillaryFringe,
+      evaporationRings,
       pigmentCoefficients,
     } = params
 
@@ -317,6 +320,11 @@ export default class WatercolorSimulation {
     const fringeParams: CapillaryFringeParams = {
       ...DEFAULT_FRINGE_PARAMS,
       ...capillaryFringe,
+    }
+
+    const ringParams: EvaporationRingParams = {
+      ...DEFAULT_RING_PARAMS,
+      ...evaporationRings,
     }
 
     const diffusionCoefficients = new THREE.Vector3(
@@ -522,6 +530,9 @@ export default class WatercolorSimulation {
       this.targets.S.swap()
 
       this.applyPaperDiffusion(substepDt, paperReplenish, fringeParams)
+      if (ringParams.enabled && ringParams.strength > 0) {
+        this.applyEvaporationRings(ringParams, substepDt)
+      }
       if (stateAbsorption) {
         this.absorbElapsed += substepDt
       } else {
@@ -545,6 +556,25 @@ export default class WatercolorSimulation {
     diffuse.uniforms.uFringeNoiseScale.value = Math.max(fringe.noiseScale, 0)
     this.renderToTarget(diffuse, this.targets.W.write)
     this.targets.W.swap()
+  }
+
+  private applyEvaporationRings(params: EvaporationRingParams, dt: number) {
+    const rings = this.materials.evaporationRings
+    const uniforms = rings.uniforms as Record<string, THREE.IUniform>
+    uniforms.uDeposits.value = this.targets.DEP.read.texture
+    uniforms.uWet.value = this.targets.W.read.texture
+    uniforms.uHeight.value = this.targets.H.read.texture
+    const texelUniform = uniforms.uTexel?.value
+    if (texelUniform instanceof THREE.Vector2) {
+      texelUniform.copy(this.texelSize)
+    }
+    uniforms.uStrength.value = Math.max(params.strength, 0)
+    uniforms.uDt.value = Math.max(dt, 0)
+    uniforms.uFilmThreshold.value = Math.max(params.filmThreshold, 0)
+    uniforms.uFilmFeather.value = Math.max(params.filmFeather, 0)
+    uniforms.uGradientScale.value = Math.max(params.gradientScale, 0)
+    this.renderToTarget(rings, this.targets.DEP.write)
+    this.targets.DEP.swap()
   }
 
   private applySurfaceTension(params: SurfaceTensionParams, dt: number) {
@@ -785,6 +815,7 @@ export type {
   ChannelCoefficients,
   SurfaceTensionParams,
   CapillaryFringeParams,
+  EvaporationRingParams,
 } from './types'
 export {
   DEFAULT_BINDER_PARAMS,
@@ -797,4 +828,5 @@ export {
   DEFAULT_SIZING_INFLUENCE,
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
+  DEFAULT_RING_PARAMS,
 } from './constants'

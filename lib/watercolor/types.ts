@@ -65,6 +65,14 @@ export interface CapillaryFringeParams {
   noiseScale: number
 }
 
+export interface EvaporationRingParams {
+  enabled: boolean
+  strength: number
+  filmThreshold: number
+  filmFeather: number
+  gradientScale: number
+}
+
 export interface SimulationParams {
   grav: number
   visc: number
@@ -85,6 +93,7 @@ export interface SimulationParams {
   reservoir: ReservoirParams
   surfaceTension: SurfaceTensionParams
   capillaryFringe: CapillaryFringeParams
+  evaporationRings: EvaporationRingParams
   pigmentCoefficients?: PigmentCoefficients
 }
 
@@ -134,6 +143,7 @@ export type MaterialMap = {
   absorbPigment: THREE.RawShaderMaterial
   absorbWet: THREE.RawShaderMaterial
   absorbSettled: THREE.RawShaderMaterial
+  evaporationRings: THREE.RawShaderMaterial
   diffuseWet: DiffuseWetMaterial
   composite: THREE.RawShaderMaterial
   divergence: THREE.RawShaderMaterial

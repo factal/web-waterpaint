@@ -1,7 +1,16 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Leva, button, useControls } from 'leva'
+import BrushControlsPanel, {
+  type BrushMaskId,
+  type BrushMediumSettings,
+  type BrushPasteSettings,
+  type BrushReservoirSettings,
+  type BrushSettings,
+  type BrushSpatterSettings,
+  type BrushTool,
+} from '@/components/dom/BrushControlsPanel'
 import WatercolorViewport, { type ViewportBrush } from '@/components/watercolor/WatercolorViewport'
 import { DEBUG_VIEW_LABELS, DEBUG_VIEW_OPTIONS, type DebugView } from '@/components/watercolor/debugViews'
 import * as THREE from 'three'
@@ -19,18 +28,7 @@ import {
   type SimulationParams,
 } from '@/lib/watercolor/WatercolorSimulation'
 
-type Tool =
-  | 'water'
-  | 'pigment0'
-  | 'pigment1'
-  | 'pigment2'
-  | 'spatter0'
-  | 'spatter1'
-  | 'spatter2'
-
 const SIM_SIZE = 512
-
-type BrushMaskId = 'round' | 'flat' | 'fan'
 
 type BrushMaskAsset = {
   texture: THREE.DataTexture
@@ -38,12 +36,6 @@ type BrushMaskAsset = {
   baseStrength: number
   pressureScale: number
   rotationJitter: number
-}
-
-const BRUSH_MASK_OPTIONS: Record<string, BrushMaskId> = {
-  'Soft Round': 'round',
-  'Flat Streak': 'flat',
-  'Fan Mop': 'fan',
 }
 
 const fract = (value: number) => value - Math.floor(value)
@@ -141,7 +133,7 @@ const PIGMENT_SWATCH: Array<[number, number, number]> = [
 ];
 
 
-function toolToBrushType(tool: Tool): BrushType {
+function toolToBrushType(tool: BrushTool): BrushType {
   if (tool === 'water') return 'water'
   if (tool.startsWith('spatter')) return 'spatter'
   return 'pigment'
@@ -150,62 +142,56 @@ function toolToBrushType(tool: Tool): BrushType {
 export default function Home() {
   const [clearSignal, setClearSignal] = useState(0)
 
-  const brushControls = useControls('Brush', {
-    tool: {
-      label: 'Tool',
-      value: 'water' as Tool,
-      options: {
-        Water: 'water',
-        'Pigment C': 'pigment0',
-        'Pigment M': 'pigment1',
-        'Pigment Y': 'pigment2',
-        'Spatter C': 'spatter0',
-        'Spatter M': 'spatter1',
-        'Spatter Y': 'spatter2',
-      },
-    },
-    radius: { label: 'Radius', value: 18, min: 2, max: 60, step: 1 },
-    flow: { label: 'Flow', value: 0.45, min: 0, max: 1, step: 0.01 },
-    mask: {
-      label: 'Bristle Mask',
-      value: 'round' as BrushMaskId,
-      options: BRUSH_MASK_OPTIONS,
-    },
-    maskStrength: { label: 'Mask Strength', value: 0.75, min: 0, max: 1, step: 0.01 },
-    streakDensity: { label: 'Streak Density', value: 0.55, min: 0, max: 1, step: 0.01 },
+  const [brushSettings, setBrushSettings] = useState<BrushSettings>({
+    tool: 'water',
+    radius: 18,
+    flow: 0.45,
+    mask: 'round',
+    maskStrength: 0.75,
+    streakDensity: 0.55,
+  })
+  const [mediumSettings, setMediumSettings] = useState<BrushMediumSettings>({
+    binderCharge: DEFAULT_BINDER_PARAMS.injection,
+    waterLoad: 0.8,
+  })
+  const [pasteSettings, setPasteSettings] = useState<BrushPasteSettings>({
+    pasteMode: false,
+    pasteBinderBoost: 4,
+    pastePigmentBoost: 2.5,
+  })
+  const [spatterSettings, setSpatterSettings] = useState<BrushSpatterSettings>({
+    dropletCount: 18,
+    sprayRadius: 1.2,
+    spreadAngle: 220,
+    sizeMin: 0.05,
+    sizeMax: 0.22,
+    sizeBias: 0.65,
+    radialBias: 0.55,
+    flowJitter: 0.4,
+  })
+  const [reservoirSettings, setReservoirSettings] = useState<BrushReservoirSettings>({
+    waterCapacityWater: 14,
+    pigmentCapacity: 11,
+    waterConsumption: 0.28,
+    pigmentConsumption: 0.22,
   })
 
-  const mediumControls = useControls('Brush Medium', {
-    binderCharge: {
-      label: 'Binder Charge',
-      value: DEFAULT_BINDER_PARAMS.injection,
-      min: 0,
-      max: 2,
-      step: 0.01,
-    },
-    waterLoad: {
-      label: 'Water Load',
-      value: 0.8,
-      min: 0.1,
-      max: 2,
-      step: 0.01,
-    },
-  })
-  const pasteControls = useControls('Paste Strokes', {
-    pasteMode: { label: 'Enable Paste Mode', value: false },
-    pasteBinderBoost: { label: 'Binder Boost', value: 4, min: 1, max: 12, step: 0.1 },
-    pastePigmentBoost: { label: 'Pigment Boost', value: 2.5, min: 1, max: 10, step: 0.1 },
-  })
-  const spatterControls = useControls('Spatter', {
-    dropletCount: { label: 'Droplets', value: 18, min: 1, max: 64, step: 1 },
-    sprayRadius: { label: 'Spray Radius', value: 1.2, min: 0.1, max: 3, step: 0.05 },
-    spreadAngle: { label: 'Spread Angle', value: 220, min: 15, max: 360, step: 1 },
-    sizeMin: { label: 'Min Drop Size', value: 0.05, min: 0.01, max: 0.6, step: 0.01 },
-    sizeMax: { label: 'Max Drop Size', value: 0.22, min: 0.02, max: 0.8, step: 0.01 },
-    sizeBias: { label: 'Size Bias', value: 0.65, min: 0, max: 1, step: 0.01 },
-    radialBias: { label: 'Radial Bias', value: 0.55, min: 0, max: 1, step: 0.01 },
-    flowJitter: { label: 'Flow Jitter', value: 0.4, min: 0, max: 1, step: 0.01 },
-  })
+  const handleBrushChange = useCallback((value: Partial<BrushSettings>) => {
+    setBrushSettings((previous) => ({ ...previous, ...value }))
+  }, [])
+  const handleMediumChange = useCallback((value: Partial<BrushMediumSettings>) => {
+    setMediumSettings((previous) => ({ ...previous, ...value }))
+  }, [])
+  const handlePasteChange = useCallback((value: Partial<BrushPasteSettings>) => {
+    setPasteSettings((previous) => ({ ...previous, ...value }))
+  }, [])
+  const handleSpatterChange = useCallback((value: Partial<BrushSpatterSettings>) => {
+    setSpatterSettings((previous) => ({ ...previous, ...value }))
+  }, [])
+  const handleReservoirChange = useCallback((value: Partial<BrushReservoirSettings>) => {
+    setReservoirSettings((previous) => ({ ...previous, ...value }))
+  }, [])
+
   const dryingControls = useControls('Drying & Deposits', {
     evap: { label: 'Evaporation', value: 0.02, min: 0, max: 1, step: 0.001 },
     absorb: { label: 'Absorption', value: 0.25, min: 0, max: 2, step: 0.001 },
@@ -307,13 +293,6 @@ export default function Home() {
     },
   })
 
-  const reservoirControls = useControls('Brush Reservoir', {
-    waterCapacityWater: { label: 'Water Brush Capacity', value: 14, min: 1, max: 25, step: 0.05 },
-    pigmentCapacity: { label: 'Pigment Charge', value: 11, min: 1, max: 20, step: 0.05 },
-    waterConsumption: { label: 'Water Consumption', value: 0.28, min: 0.01, max: 1, step: 0.01 },
-    pigmentConsumption: { label: 'Pigment Consumption', value: 0.22, min: 0.01, max: 1, step: 0.01 },
-  })
-
   const featureControls = useControls('Features', {
     stateAbsorption: { label: 'State Absorption', value: true },
     granulation: { label: 'Granulation', value: true },
@@ -395,12 +374,14 @@ export default function Home() {
     clear: button(() => setClearSignal((value) => value + 1)),
   })
 
-  const tool = brushControls.tool as Tool
-  const radius = brushControls.radius as number
-  const flow = brushControls.flow as number
-  const maskId = brushControls.mask as BrushMaskId
-  const maskStrength = brushControls.maskStrength as number
-  const streakDensity = brushControls.streakDensity as number
+  const {
+    tool,
+    radius,
+    flow,
+    mask: maskId,
+    maskStrength,
+    streakDensity,
+  } = brushSettings
   const { evap, absorb, edge, backrunStrength, sizingInfluence } = dryingControls as {
     evap: number
     absorb: number
@@ -437,12 +418,8 @@ export default function Home() {
     viscosity: number
     buoyancy: number
   }
-  const { binderCharge, waterLoad } = mediumControls as { binderCharge: number; waterLoad: number }
-  const { pasteMode, pasteBinderBoost, pastePigmentBoost } = pasteControls as {
-    pasteMode: boolean
-    pasteBinderBoost: number
-    pastePigmentBoost: number
-  }
+  const { binderCharge, waterLoad } = mediumSettings
+  const { pasteMode, pasteBinderBoost, pastePigmentBoost } = pasteSettings
   const {
     dropletCount: spatterDropletCount,
     sprayRadius: spatterSprayRadius,
@@ -452,16 +429,7 @@ export default function Home() {
     sizeBias: spatterSizeBias,
     radialBias: spatterRadialBias,
     flowJitter: spatterFlowJitter,
-  } = spatterControls as {
-    dropletCount: number
-    sprayRadius: number
-    spreadAngle: number
-    sizeMin: number
-    sizeMax: number
-    sizeBias: number
-    radialBias: number
-    flowJitter: number
-  }
+  } = spatterSettings
   const { stateAbsorption, granulation, paperTextureStrength } = featureControls as {
     stateAbsorption: boolean
     granulation: boolean
@@ -492,12 +460,7 @@ export default function Home() {
     threshold: number
     noiseScale: number
   }
-  const { waterCapacityWater, pigmentCapacity, waterConsumption, pigmentConsumption } = reservoirControls as {
-    waterCapacityWater: number;
-    pigmentCapacity: number;
-    waterConsumption: number;
-    pigmentConsumption: number;
-  }
+  const { waterCapacityWater, pigmentCapacity, waterConsumption, pigmentConsumption } = reservoirSettings
   const pigmentIndex = tool === 'water' ? -1 : parseInt(tool.slice(-1), 10)
 
   const maskAssets = useMemo(() => createBrushMaskAssets(streakDensity), [streakDensity])
@@ -680,42 +643,58 @@ export default function Home() {
     <main className='relative flex min-h-screen flex-col items-center justify-center bg-[#111111] text-slate-200'>
       <Leva collapsed titleBar={{ title: 'Watercolor Controls', drag: true }} />
 
-      <div className='relative flex w-full max-w-4xl flex-col items-center gap-6 px-4 pb-12 pt-28 sm:px-8 sm:pt-32'>
-        <div className='relative w-full max-w-[min(720px,90vw)]'>
-          <WatercolorViewport
-            className='aspect-square w-full overflow-hidden rounded-3xl border border-slate-700/40 bg-slate-900/70 shadow-2xl'
-            params={params}
-            brush={brush}
-            size={SIM_SIZE}
-            clearSignal={clearSignal}
-            debugView={debugView}
-          />
-          <div className='pointer-events-none absolute bottom-4 left-4 flex flex-col gap-1 text-[10px] tracking-wide text-slate-400 sm:text-xs'>
-            <span className='uppercase'>Resolution {SIM_SIZE}x{SIM_SIZE}</span>
-            {debugView !== 'composite' && (
-              <span className='inline-flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/70 px-2 py-1 text-[9px] font-semibold text-slate-200 shadow-sm sm:text-[10px]'>
-                <span className='uppercase text-slate-400'>Debug</span>
-                <span className='normal-case text-slate-100'>{DEBUG_VIEW_LABELS[debugView]}</span>
-              </span>
+      <div className='relative flex w-full max-w-6xl flex-col items-center gap-6 px-4 pb-12 pt-28 sm:px-8 sm:pt-32 lg:flex-row lg:items-start lg:justify-between lg:gap-10'>
+        <BrushControlsPanel
+          className='w-full lg:max-w-[360px]'
+          brush={brushSettings}
+          medium={mediumSettings}
+          paste={pasteSettings}
+          spatter={spatterSettings}
+          reservoir={reservoirSettings}
+          onBrushChange={handleBrushChange}
+          onMediumChange={handleMediumChange}
+          onPasteChange={handlePasteChange}
+          onSpatterChange={handleSpatterChange}
+          onReservoirChange={handleReservoirChange}
+        />
+
+        <div className='relative flex-1'>
+          <div className='relative mx-auto w-full max-w-[min(720px,90vw)]'>
+            <WatercolorViewport
+              className='aspect-square w-full overflow-hidden rounded-3xl border border-slate-700/40 bg-slate-900/70 shadow-2xl'
+              params={params}
+              brush={brush}
+              size={SIM_SIZE}
+              clearSignal={clearSignal}
+              debugView={debugView}
+            />
+            <div className='pointer-events-none absolute bottom-4 left-4 flex flex-col gap-1 text-[10px] tracking-wide text-slate-400 sm:text-xs'>
+              <span className='uppercase'>Resolution {SIM_SIZE}x{SIM_SIZE}</span>
+              {debugView !== 'composite' && (
+                <span className='inline-flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/70 px-2 py-1 text-[9px] font-semibold text-slate-200 shadow-sm sm:text-[10px]'>
+                  <span className='uppercase text-slate-400'>Debug</span>
+                  <span className='normal-case text-slate-100'>{DEBUG_VIEW_LABELS[debugView]}</span>
+                </span>
+              )}
+            </div>
+            {brush.type !== 'water' && pigmentIndex >= 0 && (
+              <div className='pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/80 px-3 py-1 text-xs text-slate-200 shadow-lg sm:text-sm'>
+                <span
+                  className='inline-flex h-3 w-3 rounded-full border border-white/40 sm:h-4 sm:w-4'
+                  style={{
+                    background: `rgb(${PIGMENT_SWATCH[pigmentIndex][0] * 255}, ${PIGMENT_SWATCH[pigmentIndex][1] * 255}, ${PIGMENT_SWATCH[pigmentIndex][2] * 255})`,
+                  }}
+                />
+                <span>
+                  {brush.type === 'spatter'
+                    ? 'Spatter mode'
+                    : brush.pasteMode
+                      ? 'Paste mode'
+                      : 'Pigment active'}
+                </span>
+              </div>
             )}
           </div>
-          {brush.type !== 'water' && pigmentIndex >= 0 && (
-            <div className='pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-full border border-slate-500/60 bg-slate-900/80 px-3 py-1 text-xs text-slate-200 shadow-lg sm:text-sm'>
-              <span
-                className='inline-flex h-3 w-3 rounded-full border border-white/40 sm:h-4 sm:w-4'
-                style={{
-                  background: `rgb(${PIGMENT_SWATCH[pigmentIndex][0] * 255}, ${PIGMENT_SWATCH[pigmentIndex][1] * 255}, ${PIGMENT_SWATCH[pigmentIndex][2] * 255})`,
-                }}
-              />
-              <span>
-                {brush.type === 'spatter'
-                  ? 'Spatter mode'
-                  : brush.pasteMode
-                    ? 'Paste mode'
-                    : 'Pigment active'}
-              </span>
-            </div>
-          )}
         </div>
       </div>
     </main>

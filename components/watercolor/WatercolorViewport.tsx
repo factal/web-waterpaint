@@ -330,7 +330,9 @@ const WatercolorViewport = ({
           brushState.type === 'water' ? 0 : Math.min(1, Math.max(0, 1 - waterRatio))
         const reservoirSolvent = baseDryness > 0.75 ? baseDryness : 0
         const pasteActive = brushState.type === 'pigment' && brushState.pasteMode
-        const lowSolvent = pasteActive ? 1 : reservoirSolvent
+        // temporally disable low solvent mode
+        // const lowSolvent = pasteActive ? 1 : reservoirSolvent
+        const lowSolvent = 0
         const dryness = pasteActive ? Math.max(baseDryness, 0.92) : baseDryness
         const dryThreshold = lowSolvent > 0 ? 0.82 : undefined
 

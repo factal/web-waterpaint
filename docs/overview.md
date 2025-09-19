@@ -147,6 +147,7 @@ Leva panels in the demo map directly to `SimulationParams` fields:
 - **Brush Reservoir** – Water/pigment capacities and per-stamp consumption rates.
 - **Pigment Separation** – RGB diffusion/settling overrides and per-pigment presets.
 - **Simulation Features** – Toggles for state-dependent absorption, paper-texture-driven granulation, and rewetting behaviour.
+- **Debug Visualization** – Switch between the final composite and internal buffers (height, velocity, pigment, wetness, binder, paper maps) to inspect solver state.
 
 ## References
 

@@ -308,8 +308,8 @@ export default function Home() {
   })
 
   const reservoirControls = useControls('Brush Reservoir', {
-    waterCapacityWater: { label: 'Water Brush Capacity', value: 1.4, min: 0.1, max: 2.5, step: 0.05 },
-    pigmentCapacity: { label: 'Pigment Charge', value: 1.1, min: 0.1, max: 2, step: 0.05 },
+    waterCapacityWater: { label: 'Water Brush Capacity', value: 14, min: 1, max: 25, step: 0.05 },
+    pigmentCapacity: { label: 'Pigment Charge', value: 11, min: 1, max: 20, step: 0.05 },
     waterConsumption: { label: 'Water Consumption', value: 0.28, min: 0.01, max: 1, step: 0.01 },
     pigmentConsumption: { label: 'Pigment Consumption', value: 0.22, min: 0.01, max: 1, step: 0.01 },
     stampSpacing: { label: 'Stamp Spacing', value: 0.015, min: 0.001, max: 0.05, step: 0.001 },

@@ -12,6 +12,7 @@ import {
   ADVECT_VELOCITY_FRAGMENT,
   BINDER_FORCE_FRAGMENT,
   COMPOSITE_FRAGMENT,
+  EVAPORATION_RING_FRAGMENT,
   FULLSCREEN_VERTEX,
   PAPER_DIFFUSION_FRAGMENT,
   PIGMENT_DIFFUSION_FRAGMENT,
@@ -39,6 +40,7 @@ import {
   DEFAULT_DT,
   DEPOSITION_BASE,
   DEFAULT_FRINGE_PARAMS,
+  DEFAULT_RING_PARAMS,
   GRANULATION_STRENGTH,
   HUMIDITY_INFLUENCE,
   KM_LAYER_SCALE,
@@ -287,6 +289,18 @@ export function createMaterials(
   const absorbWet = createMaterial(ABSORB_WET_FRAGMENT, absorbUniforms())
   const absorbSettled = createMaterial(ABSORB_SETTLED_FRAGMENT, absorbUniforms())
 
+  const evaporationRings = createMaterial(EVAPORATION_RING_FRAGMENT, {
+    uDeposits: { value: null },
+    uWet: { value: null },
+    uHeight: { value: null },
+    uTexel: { value: texelSize.clone() },
+    uStrength: { value: DEFAULT_RING_PARAMS.strength },
+    uDt: { value: DEFAULT_DT },
+    uFilmThreshold: { value: DEFAULT_RING_PARAMS.filmThreshold },
+    uFilmFeather: { value: DEFAULT_RING_PARAMS.filmFeather },
+    uGradientScale: { value: DEFAULT_RING_PARAMS.gradientScale },
+  })
+
   const diffuseWet = createMaterial(PAPER_DIFFUSION_FRAGMENT, {
     uWet: { value: null },
     uFiber: { value: fiberTexture },
@@ -345,6 +359,7 @@ export function createMaterials(
     absorbPigment,
     absorbWet,
     absorbSettled,
+    evaporationRings,
     diffuseWet,
     composite,
     divergence,

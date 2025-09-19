@@ -20,6 +20,7 @@ import {
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
   DEFAULT_RING_PARAMS,
+  DEFAULT_PIGMENT_OPTICS,
 } from './constants'
 import {
   type BinderParams,
@@ -103,6 +104,7 @@ export default class WatercolorSimulation {
       this.fiberTexture,
       this.paperHeightMap,
       this.sizingMap,
+      DEFAULT_PIGMENT_OPTICS,
     )
 
     this.maskBuilder = new StrokeMaskBuilder(
@@ -368,6 +370,32 @@ export default class WatercolorSimulation {
     const ringParams: EvaporationRingParams = {
       ...DEFAULT_RING_PARAMS,
       ...evaporationRings,
+    }
+
+    const absorptionTable = pigmentCoefficients?.absorption ?? DEFAULT_PIGMENT_OPTICS.absorption
+    const scatteringTable = pigmentCoefficients?.scattering ?? DEFAULT_PIGMENT_OPTICS.scattering
+    const binderScatter = Math.max(
+      pigmentCoefficients?.binderScatter ?? DEFAULT_PIGMENT_OPTICS.binderScatter,
+      0,
+    )
+    const compositeUniforms = this.materials.composite.uniforms as Record<string, THREE.IUniform>
+    const kUniform = compositeUniforms.uK.value as THREE.Vector3[]
+    const sUniform = compositeUniforms.uS.value as THREE.Vector3[]
+    for (let i = 0; i < kUniform.length; i += 1) {
+      const absorption = absorptionTable[i] ?? absorptionTable[absorptionTable.length - 1]
+      const scattering = scatteringTable[i] ?? scatteringTable[scatteringTable.length - 1]
+      const targetK = kUniform[i]
+      const targetS = sUniform[i]
+      if (targetK && absorption) {
+        targetK.set(absorption[0], absorption[1], absorption[2])
+      }
+      if (targetS && scattering) {
+        targetS.set(scattering[0], scattering[1], scattering[2])
+      }
+    }
+    const binderUniform = compositeUniforms.uBinderScatter
+    if (binderUniform) {
+      binderUniform.value = binderScatter
     }
 
     const diffusionCoefficients = new THREE.Vector3(
@@ -873,4 +901,10 @@ export {
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
   DEFAULT_RING_PARAMS,
+  PIGMENT_DIFFUSION_COEFF,
+  GRANULATION_SETTLE_RATE,
+  DEFAULT_PIGMENT_OPTICS,
+  PIGMENT_K,
+  PIGMENT_S,
+  DEFAULT_BINDER_SCATTER,
 } from './constants'

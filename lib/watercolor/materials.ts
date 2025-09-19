@@ -48,13 +48,18 @@ import {
   PAPER_COLOR,
   PAPER_DIFFUSION_STRENGTH,
   PIGMENT_DIFFUSION_COEFF,
-  PIGMENT_K,
   PIGMENT_REWET,
-  PIGMENT_S,
 } from './constants'
+import {
+  type PigmentOpticalSettings,
+  type PigmentOpticalTable,
+} from './types'
 import { type DiffuseWetMaterial, type MaterialMap } from './types'
 
 const sanitizeShader = (code: string) => code.trimStart()
+
+const vectorizeOpticalTable = (table: PigmentOpticalTable) =>
+  table.map((coeffs) => new THREE.Vector3(coeffs[0], coeffs[1], coeffs[2]))
 
 function createMaterial(
   fragmentShader: string,
@@ -76,6 +81,7 @@ export function createMaterials(
   fiberTexture: THREE.DataTexture,
   paperHeightTexture: THREE.DataTexture,
   sizingTexture: THREE.DataTexture,
+  pigmentOptics: PigmentOpticalSettings,
 ): MaterialMap {
   const defaultMaskData = new Uint8Array([255, 255, 255, 255])
   const defaultMask = new THREE.DataTexture(defaultMaskData, 1, 1, THREE.RGBAFormat)
@@ -338,8 +344,9 @@ export function createMaterials(
   const composite = createMaterial(COMPOSITE_FRAGMENT, {
     uDeposits: { value: null },
     uPaper: { value: PAPER_COLOR.clone() },
-    uK: { value: PIGMENT_K.map((v) => v.clone()) },
-    uS: { value: PIGMENT_S.map((v) => v.clone()) },
+    uK: { value: vectorizeOpticalTable(pigmentOptics.absorption) },
+    uS: { value: vectorizeOpticalTable(pigmentOptics.scattering) },
+    uBinderScatter: { value: pigmentOptics.binderScatter },
     uLayerScale: { value: KM_LAYER_SCALE },
   })
 

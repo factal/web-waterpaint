@@ -82,6 +82,26 @@ approximate multi-species behaviour: channels with higher settling sink quickly 
 channels remain in solution and continue to diffuse. Pigment definitions may supply preset vectors for common watercolour paints,
 and the UI exposes overrides for advanced users.
 
+## Pigment Optics & Binder Haze
+
+Deposited pigment is shaded with a Kubelka–Munk stack driven by calibrated absorption (`K`) and scattering (`S`) tables exposed
+through `SimulationParams.pigmentCoefficients`. The default palette matches three artist-grade pigments:
+
+- **Channel 0 – Perylene Green (PBk31):** `K = (2.85, 1.96, 1.62)`, `S = (0.16, 0.14, 0.10)`
+- **Channel 1 – Quinacridone Rose (PR202):** `K = (0.45, 2.18, 1.84)`, `S = (0.64, 0.58, 0.50)`
+- **Channel 2 – Nickel Azo Yellow (PY150):** `K = (0.18, 0.44, 2.58)`, `S = (0.58, 0.54, 0.36)`
+
+The dark perylene channel exhibits `K >> S`, allowing washes to build toward deep mass tones without clamping the model. The
+composite shader also receives a binder-scattering scalar (`binderScatter`) that replaces the previous hard-coded haze. The UI
+now exposes this control as **Binder Haze** in the Binder Dynamics panel. A practical tuning workflow:
+
+1. Start with the default haze (`0.22`) to keep transparent pigments luminous.
+2. Drop the slider toward `0.05–0.12` when layering perylene-heavy mixes to let the near-black mass tone punch through.
+3. Raise the haze (`>0.3`) for chalky gouache-style blends or when high scattering is needed to soften glazing transitions.
+
+Artists who need bespoke mixtures can supply alternative `absorption`, `scattering`, and `binderScatter` values via
+`SimulationParams.pigmentCoefficients`, either per preset or on the fly through authoring tools.
+
 ## Lucas–Washburn Absorption
 
 Absorption now follows the Lucas–Washburn law. The absorb shader applies:
@@ -140,7 +160,8 @@ Leva panels in the demo map directly to `SimulationParams` fields:
 - **Brush** – Tool selection, radius, flow, and drybrush threshold controls mapped to the splat shaders.
 - **Drying & Deposits** – Base absorption (`A₀`), evaporation (`E₀`), edge bias, bloom strength, flux clamps, paper texture influence strength, and the sizing-variation slider that scales `uSizingInfluence`.
 - **Flow Dynamics** – Gravity, viscosity, CFL safety factor, and maximum adaptive substeps.
-- **Binder** – Runtime overrides for binder injection, diffusion, decay, elasticity, viscosity, and buoyancy.
+- **Binder** – Runtime overrides for binder injection, diffusion, decay, elasticity, viscosity, buoyancy, and the binder haze
+  slider that feeds the composite shader’s scattering floor.
 - **Surface Tension** – Enable/disable the filament relaxation pass and tune strength, neighbour thresholding, snapping, and the velocity gate.
 - **Capillary Fringe** – Toggle the fringe-aware diffusion pass and tune strength, wet-front thresholding, and the fibre-aligned noise scale that carves feathered edges.
 - **Evaporation Rings** – Toggle the coffee-ring redistribution pass and adjust strength, film activation thresholds, and the gradient weighting that decides how aggressively pigment is pulled toward drying rims.

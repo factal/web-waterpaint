@@ -72,6 +72,7 @@ export function createMaterials(
   texelSize: THREE.Vector2,
   fiberTexture: THREE.DataTexture,
   paperHeightTexture: THREE.DataTexture,
+  sizingTexture: THREE.DataTexture,
 ): MaterialMap {
   const defaultMaskData = new Uint8Array([255, 255, 255, 255])
   const defaultMask = new THREE.DataTexture(defaultMaskData, 1, 1, THREE.RGBAFormat)
@@ -262,6 +263,7 @@ export function createMaterials(
     uDeposits: { value: null },
     uSettled: { value: null },
     uPaperHeight: { value: paperHeightTexture },
+    uSizingMap: { value: sizingTexture },
     uAbsorb: { value: 0 },
     uEvap: { value: 0 },
     uEdge: { value: 0 },
@@ -275,6 +277,7 @@ export function createMaterials(
     uGranStrength: { value: GRANULATION_STRENGTH },
     uBackrunStrength: { value: 0 },
     uPaperHeightStrength: { value: 0 },
+    uSizingInfluence: { value: 0 },
     uTexel: { value: texelSize.clone() },
   })
 

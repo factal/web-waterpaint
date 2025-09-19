@@ -90,6 +90,8 @@ Absorption now follows the Lucas–Washburn law. The absorb shader applies:
 - **Temporal decay:** `A₀` is multiplied by `1 / √(t + t₀)` so absorption slows naturally as the wetting front propagates.
 - **Flux floor:** A configurable minimum flux prevents the system from stalling numerically once the film becomes extremely thin.
 
+Wetting irregularities come from a dedicated sizing map. A low-frequency noise texture stored in `uSizingMap` slightly boosts or suppresses the absorption term per fragment via `uSizingInfluence`. Darker sizing patches (heavier sizing) reduce the `A₀` flux while lighter regions accelerate uptake, yielding ragged wet fronts and subtle variations in edge darkening without incurring extra passes.
+
 Evaporation retains its humidity coupling, and granulation/backrun logic now runs against the diffusion-updated pigment field, producing softer, more organic blooms.
 
 ## Granulation Reservoir (`S`)
@@ -134,7 +136,7 @@ The separation keeps `WatercolorSimulation` focused on sequencing while shader d
 Leva panels in the demo map directly to `SimulationParams` fields:
 
 - **Brush** – Tool selection, radius, flow, and drybrush threshold controls mapped to the splat shaders.
-- **Drying & Deposits** – Base absorption (`A₀`), evaporation (`E₀`), edge bias, bloom strength, flux clamps, and paper texture influence strength.
+- **Drying & Deposits** – Base absorption (`A₀`), evaporation (`E₀`), edge bias, bloom strength, flux clamps, paper texture influence strength, and the sizing-variation slider that scales `uSizingInfluence`.
 - **Flow Dynamics** – Gravity, viscosity, CFL safety factor, and maximum adaptive substeps.
 - **Binder** – Runtime overrides for binder injection, diffusion, decay, elasticity, viscosity, and buoyancy.
 - **Surface Tension** – Enable/disable the filament relaxation pass and tune strength, neighbour thresholding, snapping, and the velocity gate.

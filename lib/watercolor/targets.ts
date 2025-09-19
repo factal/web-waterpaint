@@ -64,6 +64,83 @@ export function createFiberField(size: number): THREE.DataTexture {
   return texture
 }
 
+export function createSizingField(size: number): THREE.DataTexture {
+  const data = new Float32Array(size * size * 4)
+
+  const pseudoRandom = (x: number, y: number) => {
+    const n = Math.sin(x * 91.7 + y * 131.9) * 43758.5453123
+    return n - Math.floor(n)
+  }
+
+  const fade = (t: number) => t * t * (3 - 2 * t)
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+
+  const valueNoise = (x: number, y: number) => {
+    const ix = Math.floor(x)
+    const iy = Math.floor(y)
+    const fx = x - ix
+    const fy = y - iy
+
+    const v00 = pseudoRandom(ix, iy)
+    const v10 = pseudoRandom(ix + 1, iy)
+    const v01 = pseudoRandom(ix, iy + 1)
+    const v11 = pseudoRandom(ix + 1, iy + 1)
+
+    const u = fade(fx)
+    const v = fade(fy)
+
+    const x0 = lerp(v00, v10, u)
+    const x1 = lerp(v01, v11, u)
+    return lerp(x0, x1, v)
+  }
+
+  const octaves = 3
+  const lacunarity = 1.87
+  const persistence = 0.62
+  const scale = 1.8
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const idx = (y * size + x) * 4
+      const u = x / size
+      const v = y / size
+
+      let amplitude = 1
+      let frequency = 1
+      let total = 0
+      let weight = 0
+
+      for (let octave = 0; octave < octaves; octave += 1) {
+        const nx = (u + 5.71) * frequency * scale
+        const ny = (v + 9.13) * frequency * scale
+        total += valueNoise(nx, ny) * amplitude
+        weight += amplitude
+        amplitude *= persistence
+        frequency *= lacunarity
+      }
+
+      const norm = weight > 0 ? total / weight : 0.5
+      const warped = Math.pow(norm, 1.1)
+      const sizing = THREE.MathUtils.clamp(0.5 + (warped - 0.5) * 0.8, 0, 1)
+
+      data[idx + 0] = sizing
+      data[idx + 1] = sizing
+      data[idx + 2] = sizing
+      data[idx + 3] = 1.0
+    }
+  }
+
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.FloatType)
+  texture.needsUpdate = true
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.magFilter = THREE.LinearFilter
+  texture.minFilter = THREE.LinearFilter
+  texture.colorSpace = THREE.NoColorSpace
+  texture.name = 'PaperSizingField'
+  return texture
+}
+
 export function createPaperHeightField(size: number): THREE.DataTexture {
   const data = new Float32Array(size * size * 4)
 

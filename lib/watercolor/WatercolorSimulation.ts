@@ -1,7 +1,13 @@
 import * as THREE from 'three'
 
 import { createMaterials, createVelocityMaxMaterial } from './materials'
-import { createFiberField, createPaperHeightField, createPingPong, createRenderTarget } from './targets'
+import {
+  createFiberField,
+  createPaperHeightField,
+  createPingPong,
+  createRenderTarget,
+  createSizingField,
+} from './targets'
 import {
   DEFAULT_BINDER_PARAMS,
   DEFAULT_DT,
@@ -45,6 +51,7 @@ export default class WatercolorSimulation {
   private readonly materials: MaterialMap
   private readonly fiberTexture: THREE.DataTexture
   private readonly paperHeightMap: THREE.DataTexture
+  private readonly sizingMap: THREE.DataTexture
   private readonly pressure: PingPongTarget
   private readonly divergence: THREE.WebGLRenderTarget
   private readonly pressureIterations = 20
@@ -82,11 +89,17 @@ export default class WatercolorSimulation {
     this.divergence = createRenderTarget(size, textureType)
     this.fiberTexture = createFiberField(size)
     this.paperHeightMap = createPaperHeightField(size)
+    this.sizingMap = createSizingField(size)
 
     this.scene = new THREE.Scene()
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
 
-    this.materials = createMaterials(this.texelSize, this.fiberTexture, this.paperHeightMap)
+    this.materials = createMaterials(
+      this.texelSize,
+      this.fiberTexture,
+      this.paperHeightMap,
+      this.sizingMap,
+    )
 
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.materials.zero)
     this.scene.add(this.quad)
@@ -278,6 +291,7 @@ export default class WatercolorSimulation {
       granulation,
       paperTextureStrength,
       backrunStrength,
+      sizingInfluence,
       absorbExponent,
       absorbTimeOffset,
       absorbMinFlux,
@@ -293,6 +307,7 @@ export default class WatercolorSimulation {
 
     const substeps = this.determineSubsteps(cfl, maxSubsteps, dt)
     const substepDt = dt / substeps
+    const sizingStrength = Math.max(0, sizingInfluence)
 
     const surfaceParams = {
       ...DEFAULT_SURFACE_TENSION_PARAMS,
@@ -420,6 +435,7 @@ export default class WatercolorSimulation {
         timeOffset,
         absorbFloor,
         paperTextureStrength,
+        sizingStrength,
       )
       this.renderToTarget(absorbDeposit, this.targets.DEP.write)
 
@@ -438,6 +454,7 @@ export default class WatercolorSimulation {
         timeOffset,
         absorbFloor,
         paperTextureStrength,
+        sizingStrength,
       )
       this.renderToTarget(absorbHeight, this.targets.H.write)
 
@@ -456,6 +473,7 @@ export default class WatercolorSimulation {
         timeOffset,
         absorbFloor,
         paperTextureStrength,
+        sizingStrength,
       )
       this.renderToTarget(absorbPigment, this.targets.C.write)
 
@@ -474,6 +492,7 @@ export default class WatercolorSimulation {
         timeOffset,
         absorbFloor,
         paperTextureStrength,
+        sizingStrength,
       )
       this.renderToTarget(absorbWet, this.targets.W.write)
 
@@ -492,6 +511,7 @@ export default class WatercolorSimulation {
         timeOffset,
         absorbFloor,
         paperTextureStrength,
+        sizingStrength,
       )
       this.renderToTarget(absorbSettled, this.targets.S.write)
 
@@ -598,6 +618,7 @@ export default class WatercolorSimulation {
     this.clearTargets()
     this.fiberTexture.dispose()
     this.paperHeightMap.dispose()
+    this.sizingMap.dispose()
     this.velocityReductionTargets.forEach((target) => target.dispose())
   }
 
@@ -657,6 +678,7 @@ export default class WatercolorSimulation {
     timeOffset: number,
     absorbFloor: number,
     paperTextureStrength: number,
+    sizingInfluence: number,
   ) {
     const uniforms = material.uniforms as Record<string, THREE.IUniform>
     uniforms.uHeight.value = this.targets.H.read.texture
@@ -664,6 +686,7 @@ export default class WatercolorSimulation {
     uniforms.uWet.value = this.targets.W.read.texture
     uniforms.uDeposits.value = this.targets.DEP.read.texture
     if (uniforms.uSettled) uniforms.uSettled.value = this.targets.S.read.texture
+    if (uniforms.uSizingMap) uniforms.uSizingMap.value = this.sizingMap
     uniforms.uAbsorb.value = absorb
     uniforms.uEvap.value = evap
     uniforms.uEdge.value = edge
@@ -680,6 +703,7 @@ export default class WatercolorSimulation {
     if (uniforms.uAbsorbTimeOffset) uniforms.uAbsorbTimeOffset.value = timeOffset
     if (uniforms.uAbsorbFloor) uniforms.uAbsorbFloor.value = absorbFloor
     if (uniforms.uPaperHeightStrength) uniforms.uPaperHeightStrength.value = paperTextureStrength
+    if (uniforms.uSizingInfluence) uniforms.uSizingInfluence.value = sizingInfluence
   }
 
   private createVelocityReductionTargets(size: number): THREE.WebGLRenderTarget[] {
@@ -770,6 +794,7 @@ export {
   DEFAULT_REWET_STRENGTH,
   PIGMENT_REWET,
   DEFAULT_PAPER_TEXTURE_STRENGTH,
+  DEFAULT_SIZING_INFLUENCE,
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
 } from './constants'

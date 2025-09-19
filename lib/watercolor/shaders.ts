@@ -405,6 +405,7 @@ uniform sampler2D uWet;
 uniform sampler2D uDeposits;
 uniform sampler2D uSettled;
 uniform sampler2D uPaperHeight;
+uniform sampler2D uSizingMap;
 uniform float uAbsorb;
 uniform float uEvap;
 uniform float uEdge;
@@ -418,6 +419,7 @@ uniform float uSettle;
 uniform float uGranStrength;
 uniform float uBackrunStrength;
 uniform float uPaperHeightStrength;
+uniform float uSizingInfluence;
 uniform vec2 uTexel;
 
 struct AbsorbResult {
@@ -436,6 +438,7 @@ AbsorbResult computeAbsorb(vec2 uv) {
   vec3 dep = texture(uDeposits, uv).rgb;
   vec3 settled = texture(uSettled, uv).rgb;
   float paperHeight = texture(uPaperHeight, uv).r;
+  float sizing = texture(uSizingMap, uv).r;
 
   vec2 du = vec2(uTexel.x, 0.0);
   vec2 dv = vec2(0.0, uTexel.y);
@@ -456,7 +459,8 @@ AbsorbResult computeAbsorb(vec2 uv) {
   float timeTerm = max(uAbsorbTime + uAbsorbTimeOffset, 1e-4);
   float decay = inversesqrt(timeTerm);
   float baseAbsorb = max(uAbsorb * decay, uAbsorbFloor);
-  float absorbAmount = baseAbsorb * humidityFactor;
+  float sizingFactor = clamp(1.0 + uSizingInfluence * (0.5 - sizing), 0.1, 2.0);
+  float absorbAmount = baseAbsorb * humidityFactor * sizingFactor;
   float evapBase = uEvap * sqrt(max(h, 0.0));
   float evapRate = evapBase * mix(1.0, humidity, uHumidity);
   float totalOut = absorbAmount + evapRate;

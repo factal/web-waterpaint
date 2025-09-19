@@ -28,9 +28,24 @@ export interface BrushSettings {
 
 export type ChannelCoefficients = [number, number, number]
 
+export type PigmentOpticalTable = readonly [
+  ChannelCoefficients,
+  ChannelCoefficients,
+  ChannelCoefficients,
+]
+
+export interface PigmentOpticalSettings {
+  absorption: PigmentOpticalTable
+  scattering: PigmentOpticalTable
+  binderScatter: number
+}
+
 export interface PigmentCoefficients {
-  diffusion: ChannelCoefficients
-  settle: ChannelCoefficients
+  diffusion?: ChannelCoefficients
+  settle?: ChannelCoefficients
+  absorption?: PigmentOpticalTable
+  scattering?: PigmentOpticalTable
+  binderScatter?: number
 }
 
 export interface BinderParams {

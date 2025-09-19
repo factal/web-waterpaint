@@ -825,6 +825,7 @@ uniform sampler2D uDeposits;
 uniform vec3 uPaper;
 uniform vec3 uK[3];
 uniform vec3 uS[3];
+uniform float uBinderScatter;
 uniform float uLayerScale;
 
 vec3 infiniteLayer(vec3 K, vec3 S) {
@@ -837,7 +838,7 @@ vec3 infiniteLayer(vec3 K, vec3 S) {
 void main() {
   vec3 dep = texture(uDeposits, vUv).rgb;
   vec3 K = dep.r * uK[0] + dep.g * uK[1] + dep.b * uK[2];
-  vec3 S = vec3(0.4) + dep.r * uS[0] + dep.g * uS[1] + dep.b * uS[2];
+  vec3 S = vec3(uBinderScatter) + dep.r * uS[0] + dep.g * uS[1] + dep.b * uS[2];
   float density = dot(dep, vec3(1.0));
   float layerK = 1.0 + uLayerScale * density;
   float layerS = 1.0 + 0.5 * uLayerScale * density;

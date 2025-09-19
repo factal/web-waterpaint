@@ -20,12 +20,18 @@ import {
   DEFAULT_ABSORB_MIN_FLUX,
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_BINDER_PARAMS,
+  DEFAULT_BINDER_SCATTER,
   DEFAULT_PAPER_TEXTURE_STRENGTH,
   DEFAULT_SIZING_INFLUENCE,
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
   DEFAULT_RING_PARAMS,
+  PIGMENT_DIFFUSION_COEFF,
+  GRANULATION_SETTLE_RATE,
+  PIGMENT_K,
+  PIGMENT_S,
   type BrushType,
+  type ChannelCoefficients,
   type SimulationParams,
 } from '@/lib/watercolor/WatercolorSimulation'
 
@@ -349,6 +355,13 @@ export default function Home() {
       max: 1,
       step: 0.01,
     },
+    binderScatter: {
+      label: 'Binder Haze',
+      value: DEFAULT_BINDER_SCATTER,
+      min: 0,
+      max: 0.6,
+      step: 0.01,
+    },
   })
 
   const featureControls = useControls('Features', {
@@ -469,12 +482,14 @@ export default function Home() {
     elasticity: binderElasticity,
     viscosity: binderViscosity,
     buoyancy: binderBuoyancy,
+    binderScatter,
   } = binderControls as {
     diffusion: number
     decay: number
     elasticity: number
     viscosity: number
     buoyancy: number
+    binderScatter: number
   }
   const { binderCharge, waterLoad } = mediumSettings
   const { pasteMode, pasteBinderBoost, pastePigmentBoost } = pasteSettings
@@ -661,6 +676,21 @@ export default function Home() {
       waterConsumption,
       pigmentConsumption,
     },
+    pigmentCoefficients: {
+      diffusion: [
+        PIGMENT_DIFFUSION_COEFF,
+        PIGMENT_DIFFUSION_COEFF,
+        PIGMENT_DIFFUSION_COEFF,
+      ] as ChannelCoefficients,
+      settle: [
+        GRANULATION_SETTLE_RATE,
+        GRANULATION_SETTLE_RATE,
+        GRANULATION_SETTLE_RATE,
+      ] as ChannelCoefficients,
+      absorption: PIGMENT_K,
+      scattering: PIGMENT_S,
+      binderScatter,
+    },
   }), [
     grav,
     visc,
@@ -700,6 +730,7 @@ export default function Home() {
     pigmentCapacity,
     waterConsumption,
     pigmentConsumption,
+    binderScatter,
   ])
 
   return (

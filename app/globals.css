@@ -43,11 +43,6 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-:root {
-  --background: #0b0b10;
-  --foreground: #e4e7ee;
-}
-
 body {
   margin: 0;
 }

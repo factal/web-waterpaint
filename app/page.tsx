@@ -212,8 +212,8 @@ export default function Home() {
   const [reservoirSettings, setReservoirSettings] = useState<BrushReservoirSettings>({
     waterCapacityWater: 14,
     pigmentCapacity: 11,
-    waterConsumption: 0.28,
-    pigmentConsumption: 0.22,
+    waterConsumption: 0.028,
+    pigmentConsumption: 0.022,
   })
   const [pigments, setPigments] = useState<PigmentSlot[]>(() =>
     DEFAULT_PIGMENTS.map((slot) => ({

@@ -415,7 +415,7 @@ uniform float uAbsorbTime;
 uniform float uAbsorbTimeOffset;
 uniform float uAbsorbFloor;
 uniform float uHumidity;
-uniform float uSettle;
+uniform vec3 uSettle;
 uniform float uGranStrength;
 uniform float uBackrunStrength;
 uniform float uPaperHeightStrength;
@@ -482,8 +482,8 @@ AbsorbResult computeAbsorb(vec2 uv) {
   dep += bloomDep;
   pigment = max(pigment - bloomDep, vec3(0.0));
 
-  float settleBase = clamp(uSettle, 0.0, 1.0);
-  float settleRate = clamp(settleBase * valleyFactor, 0.0, 1.0);
+  vec3 settleBase = clamp(uSettle, vec3(0.0), vec3(1.0));
+  vec3 settleRate = clamp(settleBase * valleyFactor, vec3(0.0), vec3(1.0));
   vec3 settleAdd = pigment * settleRate;
   pigment = max(pigment - settleAdd, vec3(0.0));
   vec3 settledNew = settled + settleAdd;

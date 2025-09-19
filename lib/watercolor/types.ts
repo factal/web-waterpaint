@@ -2,16 +2,18 @@ import * as THREE from 'three'
 
 export type BrushType = 'water' | 'pigment' | 'spatter'
 
-export interface BrushMaskParams {
-  texture: THREE.Texture | null
-  scale: [number, number]
-  rotation: number
+export type BrushMaskKind = 'stroke' | 'droplet'
+
+export interface BrushMaskInstance {
+  kind: BrushMaskKind
+  texture: THREE.Texture
   strength: number
+  flowScale: number
+  velocity?: [number, number]
+  velocityStrength?: number
 }
 
 export interface BrushSettings {
-  center: [number, number]
-  radius: number
   flow: number
   type: BrushType
   color: [number, number, number]
@@ -21,7 +23,7 @@ export interface BrushSettings {
   binderBoost?: number
   pigmentBoost?: number
   depositBoost?: number
-  mask?: BrushMaskParams
+  mask: BrushMaskInstance
 }
 
 export type ChannelCoefficients = [number, number, number]
@@ -46,7 +48,6 @@ export interface ReservoirParams {
   pigmentCapacity: number
   waterConsumption: number
   pigmentConsumption: number
-  stampSpacing: number
 }
 
 export interface SurfaceTensionParams {
@@ -124,6 +125,7 @@ export type DiffuseWetMaterial = THREE.RawShaderMaterial & {
 
 export type MaterialMap = {
   zero: THREE.RawShaderMaterial
+  strokeMask: THREE.RawShaderMaterial
   splatHeight: THREE.RawShaderMaterial
   splatVelocity: THREE.RawShaderMaterial
   splatPigment: THREE.RawShaderMaterial

@@ -26,6 +26,7 @@ import {
   SPLAT_REWET_DEPOSIT_FRAGMENT,
   SPLAT_REWET_PIGMENT_FRAGMENT,
   SPLAT_VELOCITY_FRAGMENT,
+  STROKE_MASK_FRAGMENT,
   SURFACE_TENSION_FRAGMENT,
   ZERO_FRAGMENT,
   VELOCITY_MAX_FRAGMENT,
@@ -84,21 +85,35 @@ export function createMaterials(
   defaultMask.magFilter = THREE.LinearFilter
   defaultMask.minFilter = THREE.LinearFilter
 
-  const centerUniform = () => ({ value: new THREE.Vector2(0, 0) })
   const pigmentUniform = () => ({ value: new THREE.Vector3(0, 0, 0) })
   const maskUniforms = () => ({
-    uBristleMask: { value: defaultMask },
-    uMaskScale: { value: new THREE.Vector2(1, 1) },
-    uMaskRotation: { value: 0 },
-    uMaskStrength: { value: 0 },
+    uMask: { value: defaultMask },
+    uMaskStrength: { value: 1 },
+    uMaskFlow: { value: 1 },
   })
 
   const zero = createMaterial(ZERO_FRAGMENT, {})
 
+  const strokeMask = new THREE.RawShaderMaterial({
+    uniforms: {
+      uSource: { value: defaultMask },
+      uBristleMask: { value: defaultMask },
+      uCenter: { value: new THREE.Vector2(0, 0) },
+      uRadius: { value: 0 },
+      uMaskScale: { value: new THREE.Vector2(1, 1) },
+      uMaskRotation: { value: 0 },
+      uMaskStrength: { value: 1 },
+    },
+    vertexShader: sanitizeShader(FULLSCREEN_VERTEX),
+    fragmentShader: sanitizeShader(STROKE_MASK_FRAGMENT),
+    glslVersion: THREE.GLSL3,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.NoBlending,
+  })
+
   const splatHeight = createMaterial(SPLAT_HEIGHT_FRAGMENT, {
     uSource: { value: null },
-    uCenter: centerUniform(),
-    uRadius: { value: 0 },
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uPaperHeight: { value: paperHeightTexture },
@@ -109,19 +124,17 @@ export function createMaterials(
 
   const splatVelocity = createMaterial(SPLAT_VELOCITY_FRAGMENT, {
     uSource: { value: null },
-    uCenter: centerUniform(),
-    uRadius: { value: 0 },
     uFlow: { value: 0 },
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    uVelocityVector: { value: new THREE.Vector2(0, 0) },
+    uVelocityStrength: { value: 0 },
     ...maskUniforms(),
   })
 
   const splatPigment = createMaterial(SPLAT_PIGMENT_FRAGMENT, {
     uSource: { value: null },
-    uCenter: centerUniform(),
-    uRadius: { value: 0 },
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uPigment: pigmentUniform(),
@@ -135,8 +148,6 @@ export function createMaterials(
 
   const splatBinder = createMaterial(SPLAT_BINDER_FRAGMENT, {
     uSource: { value: null },
-    uCenter: centerUniform(),
-    uRadius: { value: 0 },
     uFlow: { value: 0 },
     uToolType: { value: 0 },
     uBinderStrength: { value: DEFAULT_BINDER_PARAMS.injection },
@@ -149,8 +160,6 @@ export function createMaterials(
 
   const splatDeposit = createMaterial(SPLAT_DEPOSIT_FRAGMENT, {
     uSource: { value: null },
-    uCenter: centerUniform(),
-    uRadius: { value: 0 },
     uFlow: { value: 0 },
     uPigment: pigmentUniform(),
     uLowSolvent: { value: 0 },
@@ -164,8 +173,6 @@ export function createMaterials(
   const splatRewetPigment = createMaterial(SPLAT_REWET_PIGMENT_FRAGMENT, {
     uSource: { value: null },
     uDeposits: { value: null },
-    uCenter: centerUniform(),
-    uRadius: { value: 0 },
     uFlow: { value: 0 },
     uRewetStrength: { value: DEFAULT_REWET_STRENGTH },
     uRewetPerChannel: { value: PIGMENT_REWET.clone() },
@@ -177,8 +184,6 @@ export function createMaterials(
 
   const splatRewetDeposit = createMaterial(SPLAT_REWET_DEPOSIT_FRAGMENT, {
     uSource: { value: null },
-    uCenter: centerUniform(),
-    uRadius: { value: 0 },
     uFlow: { value: 0 },
     uRewetStrength: { value: DEFAULT_REWET_STRENGTH },
     uRewetPerChannel: { value: PIGMENT_REWET.clone() },
@@ -340,6 +345,7 @@ export function createMaterials(
 
   return {
     zero,
+    strokeMask,
     splatHeight,
     splatVelocity,
     splatPigment,

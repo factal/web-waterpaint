@@ -13,7 +13,7 @@ The watercolor system couples a shallow-water solver with pigment transport, pap
 | `DEP` | ping-pong RGBA16F | Pigment deposited on the paper (RGB). |
 | `W` | ping-pong RGBA16F | Paper wetness / retained moisture (R). |
 | `S` | ping-pong RGBA16F | Settled pigment reservoir used for granulation (RGB). |
-| `KM` | single RGBA16F | Kubelka–Munk composite colour rendered to screen. |
+| `KM` | single RGBA16F | Spectral composite colour rendered to screen (7-primary mix). |
 
 In addition to the dynamic framebuffers, the simulation owns a static single-channel `paperHeight` texture. It is generated at
 startup from fractal noise seeded alongside the fibre field so that drybrush masking and fibre diffusion share the same
@@ -32,7 +32,7 @@ All simulation textures use half floats so they remain filterable on WebGL2.
 6. **Pigment diffusion** – A dedicated Fickian diffusion pass integrates `∂C/∂t = D∇²C`, ensuring pigment blurs even in stagnant water. The coefficient is exposed through the simulation constants.
 7. **Absorption, evaporation, and granulation** – The absorb suite reads the current state and returns updated `H`, `C`, `DEP`, `W`, and `S`. Lucas–Washburn dynamics drive absorption using `A = A₀·(1 - w)^{β}` with `β = 0.5` and a temporal decay term `1 / √(t + t₀)`. Edge gradients add blooms, pigment settling feeds the granulation buffer, and paper-height-dependent weighting biases deposition toward microscopic valleys to reproduce fine grain. As pooled water thins, a dedicated evaporation-ring redistribution pass siphons pigment toward drying perimeters so isolated droplets dry with a pronounced coffee-ring fringe while preserving the interior’s lighter wash.
 8. **Paper diffusion** – Moisture diffuses anisotropically along a procedural fibre field. The shader identifies wet fronts, injects fibre-aligned high-frequency noise, and feathers isolated droplets so edges stay lively while drier paper receives a portion of the absorbed water.
-9. **Kubelka–Munk composite** – Deposited pigment is converted into optical coefficients and shaded against the paper colour with a finite-thickness KM approximation.
+9. **Spectral composite** – Deposited pigment concentrations are mixed through the seven-primary spectral basis popularised by `spectral.js`, converted back to XYZ and sRGB, and shaded against the paper colour with binder haze controls.
 
 Between the splat and transport phases, the simulation optionally performs a **rewetting** micro-pass. Whenever a new splat adds
 water on top of dry deposits, a configurable rewet factor transfers a fraction of `DEP` back into the dissolved pigment buffer so

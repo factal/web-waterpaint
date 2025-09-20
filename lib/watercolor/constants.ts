@@ -4,8 +4,9 @@ import {
   type BinderParams,
   type CapillaryFringeParams,
   type EvaporationRingParams,
-  type PigmentOpticalSettings,
-  type PigmentOpticalTable,
+  type PigmentSpectralSettings,
+  type PigmentColorTable,
+  type PigmentStrengthTable,
   type SurfaceTensionParams,
 } from './types'
 
@@ -30,29 +31,22 @@ export const PIGMENT_REWET = new THREE.Vector3(0.75, 0.6, 0.0)
 export const DEFAULT_PAPER_TEXTURE_STRENGTH = 0.8
 export const DEFAULT_SIZING_INFLUENCE = 0.18
 
-export const PIGMENT_K: PigmentOpticalTable = [
-  // Perylene green (PBk31) – deep mass tone with strong red absorption.
-  [2.85, 1.96, 1.62],
-  // Quinacridone rose (PR202) – rich magenta glaze with balanced scattering.
-  [0.45, 2.18, 1.84],
-  // Nickel azo yellow (PY150) – transparent warm yellow with pronounced blue absorption.
-  [0.18, 0.44, 2.58],
+export const PIGMENT_COLORS: PigmentColorTable = [
+  // Cyan primary
+  [0, 1, 1],
+  // Magenta primary
+  [1, 0, 1],
+  // Yellow primary
+  [1, 1, 0],
 ] as const
 
-export const PIGMENT_S: PigmentOpticalTable = [
-  // Perylene green exhibits low scattering so washes can reach near-black values.
-  [0.16, 0.14, 0.1],
-  // Quinacridone rose keeps moderate haze for glowing glazes.
-  [0.64, 0.58, 0.5],
-  // Nickel azo yellow maintains gentle diffusion with a cooler shoulder.
-  [0.58, 0.54, 0.36],
-] as const
+export const PIGMENT_TINT_STRENGTH: PigmentStrengthTable = [1, 1, 1] as const
 
 export const DEFAULT_BINDER_SCATTER = 0.22
 
-export const DEFAULT_PIGMENT_OPTICS: PigmentOpticalSettings = {
-  absorption: PIGMENT_K,
-  scattering: PIGMENT_S,
+export const DEFAULT_PIGMENT_SPECTRAL: PigmentSpectralSettings = {
+  colors: PIGMENT_COLORS,
+  tintStrength: PIGMENT_TINT_STRENGTH,
   binderScatter: DEFAULT_BINDER_SCATTER,
 }
 

@@ -821,30 +821,144 @@ export const COMPOSITE_FRAGMENT = `
 precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
+
+const int SPECTRAL_SIZE = 38;
+const float SPECTRAL_GAMMA = 2.4;
+
 uniform sampler2D uDeposits;
 uniform vec3 uPaper;
-uniform vec3 uK[3];
-uniform vec3 uS[3];
+uniform float uPigmentKS[114];
+uniform float uPigmentLuminance[3];
+uniform float uPigmentStrength[3];
 uniform float uBinderScatter;
 uniform float uLayerScale;
 
-vec3 infiniteLayer(vec3 K, vec3 S) {
-  vec3 safeS = max(S, vec3(1e-3));
-  vec3 r = 1.0 + K / safeS;
-  vec3 disc = max(r * r - vec3(1.0), vec3(0.0));
-  return clamp(r - sqrt(disc), vec3(0.0), vec3(1.0));
+float spectral_compand(float x) {
+  return x < 0.0031308 ? x * 12.92 : 1.055 * pow(x, 1.0 / SPECTRAL_GAMMA) - 0.055;
+}
+
+vec3 spectral_linear_to_srgb(vec3 lrgb) {
+  return clamp(vec3(
+    spectral_compand(lrgb.r),
+    spectral_compand(lrgb.g),
+    spectral_compand(lrgb.b)
+  ), 0.0, 1.0);
+}
+
+vec3 spectral_xyz_to_srgb(vec3 xyz) {
+  vec3 lrgb = vec3(
+    3.2409699419045213 * xyz.x - 1.5373831775700940 * xyz.y - 0.4986107602930034 * xyz.z,
+   -0.9692436362808796 * xyz.x + 1.8759675015077202 * xyz.y + 0.0415550574071756 * xyz.z,
+    0.0556300796969936 * xyz.x - 0.2039769588889766 * xyz.y + 1.0569715142428786 * xyz.z
+  );
+  return spectral_linear_to_srgb(lrgb);
+}
+
+vec3 spectral_reflectance_to_xyz(float R[SPECTRAL_SIZE]) {
+  vec3 xyz = vec3(0.0);
+  xyz += R[0] * vec3(0.0000646919989576, 0.0000018442894440, 0.0003050171476380);
+  xyz += R[1] * vec3(0.0002194098998132, 0.0000062053235865, 0.0010368066663574);
+  xyz += R[2] * vec3(0.0011205743509343, 0.0000310096046799, 0.0053131363323992);
+  xyz += R[3] * vec3(0.0037666134117111, 0.0001047483849269, 0.0179543925899536);
+  xyz += R[4] * vec3(0.0118805536037990, 0.0003536405299538, 0.0570775815345485);
+  xyz += R[5] * vec3(0.0232864424191771, 0.0009514714056444, 0.1136516189362870);
+  xyz += R[6] * vec3(0.0345594181969747, 0.0022822631748318, 0.1733587261835500);
+  xyz += R[7] * vec3(0.0372237901162006, 0.0042073290434730, 0.1962065755586570);
+  xyz += R[8] * vec3(0.0324183761091486, 0.0066887983719014, 0.1860823707062960);
+  xyz += R[9] * vec3(0.0212332056093810, 0.0098883960193565, 0.1399504753832070);
+  xyz += R[10] * vec3(0.0104909907685421, 0.0152494514496311, 0.0891745294268649);
+  xyz += R[11] * vec3(0.0032958375797931, 0.0214183109449723, 0.0478962113517075);
+  xyz += R[12] * vec3(0.0005070351633801, 0.0334229301575068, 0.0281456253957952);
+  xyz += R[13] * vec3(0.0009486742057141, 0.0513100134918512, 0.0161376622950514);
+  xyz += R[14] * vec3(0.0062737180998318, 0.0704020839399490, 0.0077591019215214);
+  xyz += R[15] * vec3(0.0168646241897775, 0.0878387072603517, 0.0042961483736618);
+  xyz += R[16] * vec3(0.0286896490259810, 0.0942490536184085, 0.0020055092122156);
+  xyz += R[17] * vec3(0.0426748124691731, 0.0979566702718931, 0.0008614711098802);
+  xyz += R[18] * vec3(0.0562547481311377, 0.0941521856862608, 0.0003690387177652);
+  xyz += R[19] * vec3(0.0694703972677158, 0.0867810237486753, 0.0001914287288574);
+  xyz += R[20] * vec3(0.0830531516998291, 0.0788565338632013, 0.0001495555858975);
+  xyz += R[21] * vec3(0.0861260963002257, 0.0635267026203555, 0.0000923109285104);
+  xyz += R[22] * vec3(0.0904661376847769, 0.0537414167568200, 0.0000681349182337);
+  xyz += R[23] * vec3(0.0850038650591277, 0.0426460643574120, 0.0000288263655696);
+  xyz += R[24] * vec3(0.0709066691074488, 0.0316173492792708, 0.0000157671820553);
+  xyz += R[25] * vec3(0.0506288916373645, 0.0208852059213910, 0.0000039406041027);
+  xyz += R[26] * vec3(0.0354739618852640, 0.0138601101360152, 0.0000015840125870);
+  xyz += R[27] * vec3(0.0214682102597065, 0.0081026402038399, 0.0000000000000000);
+  xyz += R[28] * vec3(0.0125164567619117, 0.0046301022588030, 0.0000000000000000);
+  xyz += R[29] * vec3(0.0068045816390165, 0.0024913800051319, 0.0000000000000000);
+  xyz += R[30] * vec3(0.0034645657946526, 0.0012593033677378, 0.0000000000000000);
+  xyz += R[31] * vec3(0.0014976097506959, 0.0005416465221680, 0.0000000000000000);
+  xyz += R[32] * vec3(0.0007697004809280, 0.0002779528920067, 0.0000000000000000);
+  xyz += R[33] * vec3(0.0004073680581315, 0.0001471080673854, 0.0000000000000000);
+  xyz += R[34] * vec3(0.0001690104031614, 0.0000610327472927, 0.0000000000000000);
+  xyz += R[35] * vec3(0.0000952245150365, 0.0000343873229523, 0.0000000000000000);
+  xyz += R[36] * vec3(0.0000490309872958, 0.0000177059860053, 0.0000000000000000);
+  xyz += R[37] * vec3(0.0000199961492222, 0.0000072209749130, 0.0000000000000000);
+  return xyz;
+}
+
+float KM(float KS) {
+  return 1.0 + KS - sqrt(KS * KS + 2.0 * KS);
+}
+
+float fetchPigmentKS(int pigment, int band) {
+  int index = pigment * SPECTRAL_SIZE + band;
+  return uPigmentKS[index];
+}
+
+void accumulatePigment(
+  int pigment,
+  float amount,
+  inout float ksAccum[SPECTRAL_SIZE],
+  inout float totalConcentration
+) {
+  float clamped = clamp(amount, 0.0, 6.0);
+  if (clamped <= 1e-6) {
+    return;
+  }
+  float strength = max(uPigmentStrength[pigment], 0.0);
+  float luminance = max(uPigmentLuminance[pigment], 1e-6);
+  float concentration = clamped * clamped * strength * strength * luminance;
+  totalConcentration += concentration;
+  for (int i = 0; i < SPECTRAL_SIZE; ++i) {
+    ksAccum[i] += fetchPigmentKS(pigment, i) * concentration;
+  }
 }
 
 void main() {
   vec3 dep = texture(uDeposits, vUv).rgb;
-  vec3 K = dep.r * uK[0] + dep.g * uK[1] + dep.b * uK[2];
-  vec3 S = vec3(uBinderScatter) + dep.r * uS[0] + dep.g * uS[1] + dep.b * uS[2];
-  float density = dot(dep, vec3(1.0));
-  float layerK = 1.0 + uLayerScale * density;
-  float layerS = 1.0 + 0.5 * uLayerScale * density;
-  vec3 R = infiniteLayer(K * layerK, S * layerS);
-  vec3 col = clamp(R * uPaper, vec3(0.0), vec3(1.0));
-  fragColor = vec4(col, 1.0);
+float ksAccum[SPECTRAL_SIZE];
+for (int i = 0; i < SPECTRAL_SIZE; ++i) {
+  ksAccum[i] = 0.0;
+}
+
+float totalConcentration = 0.0;
+accumulatePigment(0, dep.r, ksAccum, totalConcentration);
+accumulatePigment(1, dep.g, ksAccum, totalConcentration);
+accumulatePigment(2, dep.b, ksAccum, totalConcentration);
+
+float reflectance[SPECTRAL_SIZE];
+if (totalConcentration <= 1e-6) {
+  for (int i = 0; i < SPECTRAL_SIZE; ++i) {
+    reflectance[i] = 1.0;
+  }
+} else {
+  float invTotal = 1.0 / totalConcentration;
+  float density = max(dep.r + dep.g + dep.b, 0.0);
+  float thickness = 1.0 + max(uLayerScale, 0.0) * min(density, 4.0);
+  for (int i = 0; i < SPECTRAL_SIZE; ++i) {
+    float ks = ksAccum[i] * invTotal;
+    reflectance[i] = KM(max(ks * thickness, 0.0));
+  }
+}
+
+  vec3 xyz = spectral_reflectance_to_xyz(reflectance);
+  vec3 srgb = spectral_xyz_to_srgb(xyz);
+  float haze = clamp(uBinderScatter, 0.0, 1.0);
+  srgb = mix(srgb, vec3(1.0), haze);
+  vec3 color = clamp(srgb * uPaper, vec3(0.0), vec3(1.0));
+
+  fragColor = vec4(color, 1.0);
 }
 `
 

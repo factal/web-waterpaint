@@ -20,8 +20,9 @@ import {
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
   DEFAULT_RING_PARAMS,
-  DEFAULT_PIGMENT_OPTICS,
+  DEFAULT_PIGMENT_SPECTRAL,
 } from './constants'
+import { populateSpectralUniforms } from './spectral'
 import {
   type BinderParams,
   type BrushSettings,
@@ -104,7 +105,7 @@ export default class WatercolorSimulation {
       this.fiberTexture,
       this.paperHeightMap,
       this.sizingMap,
-      DEFAULT_PIGMENT_OPTICS,
+      DEFAULT_PIGMENT_SPECTRAL,
     )
 
     this.maskBuilder = new StrokeMaskBuilder(
@@ -372,26 +373,25 @@ export default class WatercolorSimulation {
       ...evaporationRings,
     }
 
-    const absorptionTable = pigmentCoefficients?.absorption ?? DEFAULT_PIGMENT_OPTICS.absorption
-    const scatteringTable = pigmentCoefficients?.scattering ?? DEFAULT_PIGMENT_OPTICS.scattering
+    const spectralColors = pigmentCoefficients?.colors ?? DEFAULT_PIGMENT_SPECTRAL.colors
+    const spectralStrength =
+      pigmentCoefficients?.tintStrength ?? DEFAULT_PIGMENT_SPECTRAL.tintStrength
     const binderScatter = Math.max(
-      pigmentCoefficients?.binderScatter ?? DEFAULT_PIGMENT_OPTICS.binderScatter,
+      pigmentCoefficients?.binderScatter ?? DEFAULT_PIGMENT_SPECTRAL.binderScatter,
       0,
     )
     const compositeUniforms = this.materials.composite.uniforms as Record<string, THREE.IUniform>
-    const kUniform = compositeUniforms.uK.value as THREE.Vector3[]
-    const sUniform = compositeUniforms.uS.value as THREE.Vector3[]
-    for (let i = 0; i < kUniform.length; i += 1) {
-      const absorption = absorptionTable[i] ?? absorptionTable[absorptionTable.length - 1]
-      const scattering = scatteringTable[i] ?? scatteringTable[scatteringTable.length - 1]
-      const targetK = kUniform[i]
-      const targetS = sUniform[i]
-      if (targetK && absorption) {
-        targetK.set(absorption[0], absorption[1], absorption[2])
-      }
-      if (targetS && scattering) {
-        targetS.set(scattering[0], scattering[1], scattering[2])
-      }
+    const ksBuffer = compositeUniforms.uPigmentKS.value as Float32Array
+    const luminanceBuffer = compositeUniforms.uPigmentLuminance.value as Float32Array
+    const strengthBuffer = compositeUniforms.uPigmentStrength.value as Float32Array
+    if (ksBuffer && luminanceBuffer && strengthBuffer) {
+      populateSpectralUniforms(
+        ksBuffer,
+        luminanceBuffer,
+        strengthBuffer,
+        spectralColors,
+        spectralStrength,
+      )
     }
     const binderUniform = compositeUniforms.uBinderScatter
     if (binderUniform) {
@@ -903,8 +903,8 @@ export {
   DEFAULT_RING_PARAMS,
   PIGMENT_DIFFUSION_COEFF,
   GRANULATION_SETTLE_RATE,
-  DEFAULT_PIGMENT_OPTICS,
-  PIGMENT_K,
-  PIGMENT_S,
+  DEFAULT_PIGMENT_SPECTRAL,
+  PIGMENT_COLORS,
+  PIGMENT_TINT_STRENGTH,
   DEFAULT_BINDER_SCATTER,
 } from './constants'

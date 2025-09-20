@@ -50,16 +50,14 @@ import {
   PIGMENT_DIFFUSION_COEFF,
   PIGMENT_REWET,
 } from './constants'
-import {
-  type PigmentOpticalSettings,
-  type PigmentOpticalTable,
-} from './types'
+import { type PigmentSpectralSettings } from './types'
 import { type DiffuseWetMaterial, type MaterialMap } from './types'
+import {
+  createSpectralUniformBuffers,
+  populateSpectralUniforms,
+} from './spectral'
 
 const sanitizeShader = (code: string) => code.trimStart()
-
-const vectorizeOpticalTable = (table: PigmentOpticalTable) =>
-  table.map((coeffs) => new THREE.Vector3(coeffs[0], coeffs[1], coeffs[2]))
 
 function createMaterial(
   fragmentShader: string,
@@ -81,7 +79,7 @@ export function createMaterials(
   fiberTexture: THREE.DataTexture,
   paperHeightTexture: THREE.DataTexture,
   sizingTexture: THREE.DataTexture,
-  pigmentOptics: PigmentOpticalSettings,
+  pigmentOptics: PigmentSpectralSettings,
 ): MaterialMap {
   const defaultMaskData = new Uint8Array([255, 255, 255, 255])
   const defaultMask = new THREE.DataTexture(defaultMaskData, 1, 1, THREE.RGBAFormat)
@@ -341,11 +339,21 @@ export function createMaterials(
     uTexel: { value: texelSize.clone() },
   })
 
+  const spectralUniforms = createSpectralUniformBuffers(pigmentOptics.colors.length)
+  populateSpectralUniforms(
+    spectralUniforms.ks,
+    spectralUniforms.luminance,
+    spectralUniforms.tintStrength,
+    pigmentOptics.colors,
+    pigmentOptics.tintStrength,
+  )
+
   const composite = createMaterial(COMPOSITE_FRAGMENT, {
     uDeposits: { value: null },
     uPaper: { value: PAPER_COLOR.clone() },
-    uK: { value: vectorizeOpticalTable(pigmentOptics.absorption) },
-    uS: { value: vectorizeOpticalTable(pigmentOptics.scattering) },
+    uPigmentKS: { value: spectralUniforms.ks },
+    uPigmentLuminance: { value: spectralUniforms.luminance },
+    uPigmentStrength: { value: spectralUniforms.tintStrength },
     uBinderScatter: { value: pigmentOptics.binderScatter },
     uLayerScale: { value: KM_LAYER_SCALE },
   })

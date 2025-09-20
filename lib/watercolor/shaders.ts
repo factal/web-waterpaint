@@ -927,30 +927,30 @@ void accumulatePigment(
 
 void main() {
   vec3 dep = texture(uDeposits, vUv).rgb;
-float ksAccum[SPECTRAL_SIZE];
-for (int i = 0; i < SPECTRAL_SIZE; ++i) {
-  ksAccum[i] = 0.0;
-}
-
-float totalConcentration = 0.0;
-accumulatePigment(0, dep.r, ksAccum, totalConcentration);
-accumulatePigment(1, dep.g, ksAccum, totalConcentration);
-accumulatePigment(2, dep.b, ksAccum, totalConcentration);
-
-float reflectance[SPECTRAL_SIZE];
-if (totalConcentration <= 1e-6) {
+  float ksAccum[SPECTRAL_SIZE];
   for (int i = 0; i < SPECTRAL_SIZE; ++i) {
-    reflectance[i] = 1.0;
+    ksAccum[i] = 0.0;
   }
-} else {
-  float invTotal = 1.0 / totalConcentration;
-  float density = max(dep.r + dep.g + dep.b, 0.0);
-  float thickness = 1.0 + max(uLayerScale, 0.0) * min(density, 4.0);
-  for (int i = 0; i < SPECTRAL_SIZE; ++i) {
-    float ks = ksAccum[i] * invTotal;
-    reflectance[i] = KM(max(ks * thickness, 0.0));
+
+  float totalConcentration = 0.0;
+  accumulatePigment(0, dep.r, ksAccum, totalConcentration);
+  accumulatePigment(1, dep.g, ksAccum, totalConcentration);
+  accumulatePigment(2, dep.b, ksAccum, totalConcentration);
+
+  float reflectance[SPECTRAL_SIZE];
+  if (totalConcentration <= 1e-6) {
+    for (int i = 0; i < SPECTRAL_SIZE; ++i) {
+      reflectance[i] = 1.0;
+    }
+  } else {
+    float invTotal = 1.0 / totalConcentration;
+    float density = max(dep.r + dep.g + dep.b, 0.0);
+    float thickness = 1.0 + max(uLayerScale, 0.0) * min(density, 4.0);
+    for (int i = 0; i < SPECTRAL_SIZE; ++i) {
+      float ks = ksAccum[i] * invTotal;
+      reflectance[i] = KM(max(ks * thickness, 0.0));
+    }
   }
-}
 
   vec3 xyz = spectral_reflectance_to_xyz(reflectance);
   vec3 srgb = spectral_xyz_to_srgb(xyz);

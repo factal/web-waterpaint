@@ -861,7 +861,7 @@ vec3 linear_to_srgb(vec3 lrgb) {
   return clamp(vec3(compand(lrgb[0]), compand(lrgb[1]), compand(lrgb[2])), 0.0, 1.0);
 }
 
-void linear_to_reflectance(vec3 lrgb, inout float R[WAVELEN_SAMPS_SIZE]) {
+float[7] linear_to_rgbwcmy(vec3 lrgb) {
   float w = min(lrgb.r, min(lrgb.g, lrgb.b));
 
   lrgb -= w;
@@ -878,6 +878,20 @@ void linear_to_reflectance(vec3 lrgb, inout float R[WAVELEN_SAMPS_SIZE]) {
   float r = min(max(0.0, lrgb.r - lrgb.b), max(0.0, lrgb.r - lrgb.g));
   float g = min(max(0.0, lrgb.g - lrgb.b), max(0.0, lrgb.g - lrgb.r));
   float b = min(max(0.0, lrgb.b - lrgb.g), max(0.0, lrgb.b - lrgb.r));
+
+  float[7] rgbwcmy = float[](r, g, b, w, c, m, y);
+
+  return rgbwcmy;
+}
+
+void rgbwcmy_to_reflectance(float rgbwcmy[7], inout float R[WAVELEN_SAMPS_SIZE]) {
+  float r = rgbwcmy[0];
+  float g = rgbwcmy[1];
+  float b = rgbwcmy[2];
+  float w = rgbwcmy[3];
+  float c = rgbwcmy[4];
+  float m = rgbwcmy[5];
+  float y = rgbwcmy[6];
 
   R[ 0] = max(EPSILON, w * 1.0011607271876400 + c * 0.9705850013229620 + m * 0.9906735573199880 + y * 0.0210523371789306 + r * 0.0315605737777207 + g * 0.0095560747554212 + b * 0.9794047525020140);
   R[ 1] = max(EPSILON, w * 1.0011606515972800 + c * 0.9705924981434250 + m * 0.9906715249619790 + y * 0.0210564627517414 + r * 0.0315520718330149 + g * 0.0095581580120851 + b * 0.9794007068431300);

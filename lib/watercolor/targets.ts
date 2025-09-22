@@ -2,25 +2,42 @@ import * as THREE from 'three'
 
 import { type PingPongTarget } from './types'
 
-export function createRenderTarget(size: number, type: THREE.TextureDataType) {
-  const target = new THREE.WebGLRenderTarget(size, size, {
+export function createRenderTarget(
+  size: number,
+  type: THREE.TextureDataType,
+  layers = 1,
+): THREE.WebGLRenderTarget {
+  const params = {
     type,
     format: THREE.RGBAFormat,
     depthBuffer: false,
     stencilBuffer: false,
     magFilter: THREE.LinearFilter,
     minFilter: THREE.LinearFilter,
-  })
-  target.texture.generateMipmaps = false
-  target.texture.wrapS = THREE.ClampToEdgeWrapping
-  target.texture.wrapT = THREE.ClampToEdgeWrapping
-  target.texture.colorSpace = THREE.NoColorSpace
+  } as const
+
+  const target =
+    layers > 1
+      ? new THREE.WebGLArrayRenderTarget(size, size, layers, params)
+      : new THREE.WebGLRenderTarget(size, size, params)
+
+  const texture = target.texture
+  texture.type = type
+  texture.generateMipmaps = false
+  texture.wrapS = THREE.ClampToEdgeWrapping
+  texture.wrapT = THREE.ClampToEdgeWrapping
+  texture.colorSpace = THREE.NoColorSpace
+  texture.needsUpdate = true
   return target
 }
 
-export function createPingPong(size: number, type: THREE.TextureDataType): PingPongTarget {
-  const a = createRenderTarget(size, type)
-  const b = createRenderTarget(size, type)
+export function createPingPong(
+  size: number,
+  type: THREE.TextureDataType,
+  layers = 1,
+): PingPongTarget {
+  const a = createRenderTarget(size, type, layers)
+  const b = createRenderTarget(size, type, layers)
   return {
     read: a,
     write: b,

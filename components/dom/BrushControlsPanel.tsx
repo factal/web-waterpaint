@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/utils'
+import { PigmentChannels } from '@/lib/watercolor/types'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
 import {
@@ -18,9 +19,17 @@ export type BrushTool =
   | 'pigment0'
   | 'pigment1'
   | 'pigment2'
+  | 'pigment3'
+  | 'pigment4'
+  | 'pigment5'
+  | 'pigment6'
   | 'spatter0'
   | 'spatter1'
   | 'spatter2'
+  | 'spatter3'
+  | 'spatter4'
+  | 'spatter5'
+  | 'spatter6'
 
 export type BrushMaskId = 'round' | 'flat' | 'fan'
 
@@ -62,15 +71,21 @@ export type BrushReservoirSettings = {
   pigmentConsumption: number
 }
 
-export type PigmentTuple = [number, number, number]
-
 export type PigmentPickerSlot = {
-  mass: PigmentTuple
-  color: PigmentTuple
+  channels: PigmentChannels
+  display: [number, number, number]
 }
 
-const PIGMENT_NAMES = ['Pigment C', 'Pigment M', 'Pigment Y']
-const PIGMENT_CHANNEL_LABELS = ['C', 'M', 'Y']
+const PIGMENT_NAMES = [
+  'Primary Red',
+  'Primary Green',
+  'Primary Blue',
+  'Paper White',
+  'Primary Cyan',
+  'Primary Magenta',
+  'Primary Yellow',
+]
+const PIGMENT_CHANNEL_LABELS = ['R', 'G', 'B', 'W', 'C', 'M', 'Y']
 
 type BrushControlsPanelProps = {
   className?: string
@@ -85,7 +100,7 @@ type BrushControlsPanelProps = {
   onPasteChange: (value: Partial<BrushPasteSettings>) => void
   onSpatterChange: (value: Partial<BrushSpatterSettings>) => void
   onReservoirChange: (value: Partial<BrushReservoirSettings>) => void
-  onPigmentColorChange: (index: number, color: PigmentTuple) => void
+  onPigmentColorChange: (index: number, color: [number, number, number]) => void
 }
 
 type SliderControlProps = {
@@ -102,12 +117,20 @@ type SliderControlProps = {
 
 const TOOL_OPTIONS: Array<{ label: string; value: BrushTool; pigmentIndex?: number }> = [
   { label: 'Water', value: 'water' },
-  { label: 'Pigment C', value: 'pigment0', pigmentIndex: 0 },
-  { label: 'Pigment M', value: 'pigment1', pigmentIndex: 1 },
-  { label: 'Pigment Y', value: 'pigment2', pigmentIndex: 2 },
-  { label: 'Spatter C', value: 'spatter0', pigmentIndex: 0 },
-  { label: 'Spatter M', value: 'spatter1', pigmentIndex: 1 },
-  { label: 'Spatter Y', value: 'spatter2', pigmentIndex: 2 },
+  { label: 'Pigment R', value: 'pigment0', pigmentIndex: 0 },
+  { label: 'Pigment G', value: 'pigment1', pigmentIndex: 1 },
+  { label: 'Pigment B', value: 'pigment2', pigmentIndex: 2 },
+  { label: 'Pigment W', value: 'pigment3', pigmentIndex: 3 },
+  { label: 'Pigment C', value: 'pigment4', pigmentIndex: 4 },
+  { label: 'Pigment M', value: 'pigment5', pigmentIndex: 5 },
+  { label: 'Pigment Y', value: 'pigment6', pigmentIndex: 6 },
+  { label: 'Spatter R', value: 'spatter0', pigmentIndex: 0 },
+  { label: 'Spatter G', value: 'spatter1', pigmentIndex: 1 },
+  { label: 'Spatter B', value: 'spatter2', pigmentIndex: 2 },
+  { label: 'Spatter W', value: 'spatter3', pigmentIndex: 3 },
+  { label: 'Spatter C', value: 'spatter4', pigmentIndex: 4 },
+  { label: 'Spatter M', value: 'spatter5', pigmentIndex: 5 },
+  { label: 'Spatter Y', value: 'spatter6', pigmentIndex: 6 },
 ]
 
 const toRgb255 = (value: number) => Math.round(Math.min(Math.max(value, 0), 1) * 255)
@@ -233,7 +256,7 @@ const BrushControlsPanel = ({
                 const swatchStyle =
                   pigment != null
                     ? {
-                        backgroundColor: `rgb(${toRgb255(pigment.color[0])}, ${toRgb255(pigment.color[1])}, ${toRgb255(pigment.color[2])})`,
+                        backgroundColor: `rgb(${toRgb255(pigment.display[0])}, ${toRgb255(pigment.display[1])}, ${toRgb255(pigment.display[2])})`,
                       }
                     : undefined
 
@@ -327,11 +350,11 @@ const BrushControlsPanel = ({
 
         <TabsContent value='pigments' className='space-y-6 pt-4'>
           <div className='space-y-4'>
-            <p className='text-xs text-slate-400'>Select a target colour for each slot to remap the cyan, magenta, and yellow channel mix. Values reflect the CMY conversion of the chosen swatch.</p>
+            <p className='text-xs text-slate-400'>Select a target colour for each slot to remap the RGB, CMY, and white pigment blend. Channel values show the seven-primary decomposition of the chosen swatch.</p>
             {pigments.map((slot, index) => {
               const label = PIGMENT_NAMES[index] ?? `Pigment ${index + 1}`
               const swatchStyle = {
-                backgroundColor: `rgb(${toRgb255(slot.color[0])}, ${toRgb255(slot.color[1])}, ${toRgb255(slot.color[2])})`,
+                backgroundColor: `rgb(${toRgb255(slot.display[0])}, ${toRgb255(slot.display[1])}, ${toRgb255(slot.display[2])})`,
               }
 
               return (
@@ -342,7 +365,7 @@ const BrushControlsPanel = ({
                   <div className='flex items-center justify-between gap-3'>
                     <div className='space-y-1'>
                       <p className='text-sm font-semibold text-slate-100'>{label}</p>
-                      <p className='text-xs text-slate-500'>CMY mix</p>
+                      <p className='text-xs text-slate-500'>RGBWCMY mix</p>
                     </div>
                     <span className='inline-flex h-4 w-4 rounded-full border border-white/40' style={swatchStyle} />
                   </div>
@@ -351,9 +374,9 @@ const BrushControlsPanel = ({
                     <ChromePicker
                       disableAlpha
                       color={{
-                        r: toRgb255(slot.color[0]),
-                        g: toRgb255(slot.color[1]),
-                        b: toRgb255(slot.color[2]),
+                        r: toRgb255(slot.display[0]),
+                        g: toRgb255(slot.display[1]),
+                        b: toRgb255(slot.display[2]),
                       }}
                       onChange={(value) => {
                         const { r, g, b } = value.rgb
@@ -370,7 +393,7 @@ const BrushControlsPanel = ({
                     />
                   </div>
 
-                  <div className='grid grid-cols-3 gap-2 text-xs text-slate-400'>
+                  <div className='grid grid-cols-3 gap-2 text-xs text-slate-400 sm:grid-cols-4 lg:grid-cols-7'>
                     {PIGMENT_CHANNEL_LABELS.map((channel, channelIndex) => (
                       <div
                         key={`${channel}-${index}`}
@@ -380,7 +403,7 @@ const BrushControlsPanel = ({
                           {channel}
                         </span>
                         <span className='block text-sm font-semibold text-slate-200'>
-                          {formatPercentage(slot.mass[channelIndex] ?? 0)}
+                          {formatPercentage(slot.channels[channelIndex] ?? 0)}
                         </span>
                       </div>
                     ))}

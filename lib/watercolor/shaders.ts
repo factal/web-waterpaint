@@ -50,6 +50,117 @@ float paperDryGate(vec2 uv, float flow) {
 }
 `
 
+export const SPLAT_ARRAY_COMMON = `
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform highp sampler2DArray uSource;
+uniform sampler2D uMask;
+uniform float uFlow;
+uniform float uMaskStrength;
+uniform float uMaskFlow;
+uniform sampler2D uPaperHeight;
+uniform float uDryThreshold;
+uniform float uDryInfluence;
+
+float maskCoverage(vec2 uv) {
+  float coverage = texture(uMask, uv).r;
+  float strength = clamp(uMaskStrength, 0.0, 2.0);
+  return clamp(coverage * strength, 0.0, 1.0);
+}
+
+float effectiveFlow() {
+  return max(uFlow * uMaskFlow, 0.0);
+}
+
+float paperDryGate(vec2 uv, float flow) {
+  float height = texture(uPaperHeight, uv).r;
+  float wetness = clamp(flow, 0.0, 1.0);
+  float dryMix = clamp(uDryInfluence, 0.0, 1.0);
+  float feather = mix(0.03, 0.18, 1.0 - wetness);
+  float ramp = smoothstep(uDryThreshold - feather, uDryThreshold + feather, height);
+  return mix(1.0, 1.0 - ramp, dryMix);
+}
+`
+
+const PIGMENT_ARRAY_UTILS = `
+const int PIGMENT_CHANNELS = 7;
+const int PIGMENT_LAYER_COUNT = 2;
+
+void zeroPigmentChannels(out float channels[PIGMENT_CHANNELS]) {
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    channels[i] = 0.0;
+  }
+}
+
+void samplePigmentChannels(highp sampler2DArray tex, vec2 uv, out float channels[PIGMENT_CHANNELS]) {
+  vec4 layer0 = texture(tex, vec3(uv, 0.0));
+  vec4 layer1 = texture(tex, vec3(uv, 1.0));
+  channels[0] = layer0.r;
+  channels[1] = layer0.g;
+  channels[2] = layer0.b;
+  channels[3] = layer0.a;
+  channels[4] = layer1.r;
+  channels[5] = layer1.g;
+  channels[6] = layer1.b;
+}
+
+vec4 packPigmentLayer(float channels[PIGMENT_CHANNELS], int layer) {
+  if (layer == 0) {
+    return vec4(channels[0], channels[1], channels[2], channels[3]);
+  }
+  return vec4(channels[4], channels[5], channels[6], 0.0);
+}
+
+void accumulateChannels(inout float target[PIGMENT_CHANNELS], float addend[PIGMENT_CHANNELS]) {
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    target[i] += addend[i];
+  }
+}
+
+void copyChannels(out float dest[PIGMENT_CHANNELS], float src[PIGMENT_CHANNELS]) {
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    dest[i] = src[i];
+  }
+}
+
+void clampChannels(inout float channels[PIGMENT_CHANNELS], float minValue, float maxValue) {
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    channels[i] = clamp(channels[i], minValue, maxValue);
+  }
+}
+
+void multiplyChannels(out float dest[PIGMENT_CHANNELS], float left[PIGMENT_CHANNELS], float right[PIGMENT_CHANNELS]) {
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    dest[i] = left[i] * right[i];
+  }
+}
+
+void scaleChannels(out float dest[PIGMENT_CHANNELS], float source[PIGMENT_CHANNELS], float scale) {
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    dest[i] = source[i] * scale;
+  }
+}
+
+void subtractChannelsClamped(inout float target[PIGMENT_CHANNELS], float sub[PIGMENT_CHANNELS]) {
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    target[i] = max(target[i] - sub[i], 0.0);
+  }
+}
+
+void minAssign(inout float target[PIGMENT_CHANNELS], float other[PIGMENT_CHANNELS]) {
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    target[i] = min(target[i], other[i]);
+  }
+}
+
+void maxAssign(inout float target[PIGMENT_CHANNELS], float other[PIGMENT_CHANNELS]) {
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    target[i] = max(target[i], other[i]);
+  }
+}
+`
+
 export const STROKE_MASK_FRAGMENT = `
 precision highp float;
 in vec2 vUv;
@@ -120,13 +231,17 @@ void main() {
 `
 
 export const SPLAT_PIGMENT_FRAGMENT = `
-${SPLAT_COMMON}
+${SPLAT_ARRAY_COMMON}
+${PIGMENT_ARRAY_UTILS}
 uniform float uToolType;
-uniform vec3 uPigment;
+uniform float uPigment[PIGMENT_CHANNELS];
 uniform float uLowSolvent;
 uniform float uBoost;
+uniform int uLayerBlock;
 void main() {
-  vec4 src = texture(uSource, vUv);
+  float srcChannels[PIGMENT_CHANNELS];
+  samplePigmentChannels(uSource, vUv, srcChannels);
+
   float flow = effectiveFlow();
   float coverage = maskCoverage(vUv);
   float gate = paperDryGate(vUv, flow);
@@ -134,8 +249,16 @@ void main() {
   float solvent = clamp(uLowSolvent, 0.0, 1.0);
   float boost = mix(1.0, max(uBoost, 1.0), solvent);
   float baseFlow = mix(flow, max(flow, 0.12), solvent);
-  vec3 add = uPigment * (baseFlow * boost * coverage * pigmentMask * gate);
-  fragColor = vec4(src.rgb + add, src.a);
+
+  float addChannels[PIGMENT_CHANNELS];
+  zeroPigmentChannels(addChannels);
+  float factor = baseFlow * boost * coverage * pigmentMask * gate;
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    addChannels[i] = uPigment[i] * factor;
+  }
+
+  accumulateChannels(srcChannels, addChannels);
+  fragColor = packPigmentLayer(srcChannels, uLayerBlock);
 }
 `
 
@@ -158,53 +281,84 @@ void main() {
 `
 
 export const SPLAT_DEPOSIT_FRAGMENT = `
-${SPLAT_COMMON}
-uniform vec3 uPigment;
+${SPLAT_ARRAY_COMMON}
+${PIGMENT_ARRAY_UTILS}
+uniform float uPigment[PIGMENT_CHANNELS];
 uniform float uLowSolvent;
 uniform float uBoost;
+uniform int uLayerBlock;
 void main() {
-  vec4 src = texture(uSource, vUv);
+  float srcChannels[PIGMENT_CHANNELS];
+  samplePigmentChannels(uSource, vUv, srcChannels);
+
   float flow = effectiveFlow();
   float coverage = maskCoverage(vUv);
   float solvent = clamp(uLowSolvent, 0.0, 1.0);
   float boost = mix(1.0, max(uBoost, 1.0), solvent);
   float baseFlow = mix(flow, max(flow, 0.15), solvent);
-  vec3 add = uPigment * (baseFlow * boost * solvent * coverage);
-  fragColor = vec4(src.rgb + add, 1.0);
+
+  float addChannels[PIGMENT_CHANNELS];
+  zeroPigmentChannels(addChannels);
+  float factor = baseFlow * boost * solvent * coverage;
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    addChannels[i] = uPigment[i] * factor;
+  }
+
+  accumulateChannels(srcChannels, addChannels);
+  fragColor = packPigmentLayer(srcChannels, uLayerBlock);
 }
 `
 
 export const SPLAT_REWET_PIGMENT_FRAGMENT = `
-${SPLAT_COMMON}
-uniform sampler2D uDeposits;
+${SPLAT_ARRAY_COMMON}
+${PIGMENT_ARRAY_UTILS}
+uniform highp sampler2DArray uDeposits;
 uniform float uRewetStrength;
-uniform vec3 uRewetPerChannel;
+uniform float uRewetPerChannel[PIGMENT_CHANNELS];
+uniform int uLayerBlock;
 void main() {
-  vec4 src = texture(uSource, vUv);
-  vec3 dep = texture(uDeposits, vUv).rgb;
+  float pigmentChannels[PIGMENT_CHANNELS];
+  float depositChannels[PIGMENT_CHANNELS];
+  samplePigmentChannels(uSource, vUv, pigmentChannels);
+  samplePigmentChannels(uDeposits, vUv, depositChannels);
+
   float coverage = maskCoverage(vUv);
   float flow = effectiveFlow();
   float fraction = clamp(uRewetStrength * flow * coverage, 0.0, 1.0);
-  vec3 weights = clamp(uRewetPerChannel, vec3(0.0), vec3(1.0));
-  vec3 dissolved = min(dep, dep * (weights * fraction));
-  fragColor = vec4(src.rgb + dissolved, src.a);
+
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    float weight = clamp(uRewetPerChannel[i], 0.0, 1.0);
+    float available = max(depositChannels[i], 0.0);
+    float dissolved = min(available, available * weight * fraction);
+    pigmentChannels[i] += dissolved;
+  }
+
+  fragColor = packPigmentLayer(pigmentChannels, uLayerBlock);
 }
 `
 
 export const SPLAT_REWET_DEPOSIT_FRAGMENT = `
-${SPLAT_COMMON}
+${SPLAT_ARRAY_COMMON}
+${PIGMENT_ARRAY_UTILS}
 uniform float uRewetStrength;
-uniform vec3 uRewetPerChannel;
+uniform float uRewetPerChannel[PIGMENT_CHANNELS];
+uniform int uLayerBlock;
 void main() {
-  vec4 src = texture(uSource, vUv);
-  vec3 dep = src.rgb;
+  float depositChannels[PIGMENT_CHANNELS];
+  samplePigmentChannels(uSource, vUv, depositChannels);
+
   float coverage = maskCoverage(vUv);
   float flow = effectiveFlow();
   float fraction = clamp(uRewetStrength * flow * coverage, 0.0, 1.0);
-  vec3 weights = clamp(uRewetPerChannel, vec3(0.0), vec3(1.0));
-  vec3 dissolved = min(dep, dep * (weights * fraction));
-  vec3 newDep = max(dep - dissolved, vec3(0.0));
-  fragColor = vec4(newDep, 1.0);
+
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    float weight = clamp(uRewetPerChannel[i], 0.0, 1.0);
+    float available = max(depositChannels[i], 0.0);
+    float dissolved = min(available, available * weight * fraction);
+    depositChannels[i] = max(available - dissolved, 0.0);
+  }
+
+  fragColor = packPigmentLayer(depositChannels, uLayerBlock);
 }
 `
 
@@ -319,14 +473,22 @@ export const ADVECT_PIGMENT_FRAGMENT = `
 precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
-uniform sampler2D uPigment;
+${PIGMENT_ARRAY_UTILS}
+uniform highp sampler2DArray uPigment;
 uniform sampler2D uVelocity;
 uniform float uDt;
+uniform int uLayerBlock;
 void main() {
   vec2 vel = texture(uVelocity, vUv).xy;
   vec2 back = vUv - uDt * vel;
-  vec4 sample_color = texture(uPigment, back);
-  fragColor = vec4(max(sample_color.rgb, vec3(0.0)), sample_color.a);
+
+  float channels[PIGMENT_CHANNELS];
+  samplePigmentChannels(uPigment, back, channels);
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    channels[i] = max(channels[i], 0.0);
+  }
+
+  fragColor = packPigmentLayer(channels, uLayerBlock);
 }
 `
 
@@ -334,26 +496,39 @@ export const PIGMENT_DIFFUSION_FRAGMENT = `
 precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
-uniform sampler2D uPigment;
+${PIGMENT_ARRAY_UTILS}
+uniform highp sampler2DArray uPigment;
 uniform vec2 uTexel;
-uniform vec3 uDiffusion;
+uniform float uDiffusion[PIGMENT_CHANNELS];
 uniform float uDt;
-
-vec3 sampleRGB(vec2 uv) {
-  return texture(uPigment, uv).rgb;
-}
+uniform int uLayerBlock;
 
 void main() {
-  vec4 center = texture(uPigment, vUv);
   vec2 du = vec2(uTexel.x, 0.0);
   vec2 dv = vec2(0.0, uTexel.y);
-  vec3 left = sampleRGB(vUv - du);
-  vec3 right = sampleRGB(vUv + du);
-  vec3 bottom = sampleRGB(vUv - dv);
-  vec3 top = sampleRGB(vUv + dv);
-  vec3 laplacian = left + right + top + bottom - 4.0 * center.rgb;
-  vec3 diffused = center.rgb + (uDiffusion * laplacian) * uDt;
-  fragColor = vec4(max(diffused, vec3(0.0)), center.a);
+
+  float center[PIGMENT_CHANNELS];
+  float left[PIGMENT_CHANNELS];
+  float right[PIGMENT_CHANNELS];
+  float bottom[PIGMENT_CHANNELS];
+  float top[PIGMENT_CHANNELS];
+
+  samplePigmentChannels(uPigment, vUv, center);
+  samplePigmentChannels(uPigment, vUv - du, left);
+  samplePigmentChannels(uPigment, vUv + du, right);
+  samplePigmentChannels(uPigment, vUv - dv, bottom);
+  samplePigmentChannels(uPigment, vUv + dv, top);
+
+  float result[PIGMENT_CHANNELS];
+  zeroPigmentChannels(result);
+
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    float laplacian = left[i] + right[i] + top[i] + bottom[i] - 4.0 * center[i];
+    float diffused = center[i] + uDiffusion[i] * laplacian * uDt;
+    result[i] = max(diffused, 0.0);
+  }
+
+  fragColor = packPigmentLayer(result, uLayerBlock);
 }
 `
 
@@ -429,15 +604,18 @@ void main() {
 
 export const ABSORB_COMMON = `
 precision highp float;
+
+${PIGMENT_ARRAY_UTILS}
+
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uHeight;
-uniform sampler2D uPigment;
+uniform highp sampler2DArray uPigment;
 uniform sampler2D uWet;
-uniform sampler2D uDeposits;
-uniform sampler2D uSettled;
-uniform sampler2D uPaperHeight;
-uniform sampler2D uSizingMap;
+uniform highp sampler2DArray uDeposits;
+uniform highp sampler2DArray uSettled;
+uniform highp sampler2D uPaperHeight;
+uniform highp sampler2D uSizingMap;
 uniform float uAbsorb;
 uniform float uEvap;
 uniform float uEdge;
@@ -447,28 +625,29 @@ uniform float uAbsorbTime;
 uniform float uAbsorbTimeOffset;
 uniform float uAbsorbFloor;
 uniform float uHumidity;
-uniform vec3 uSettle;
+uniform float uSettle[PIGMENT_CHANNELS];
 uniform float uGranStrength;
 uniform float uBackrunStrength;
 uniform float uPaperHeightStrength;
 uniform float uSizingInfluence;
 uniform vec2 uTexel;
 
-struct AbsorbResult {
-  float newH;
-  float newWet;
-  vec3 pigment;
-  vec3 dep;
-  vec3 settled;
-};
-
-AbsorbResult computeAbsorb(vec2 uv) {
-  AbsorbResult res;
+void computeAbsorb(
+  vec2 uv,
+  out float newH,
+  out float newWet,
+  out float pigmentOut[PIGMENT_CHANNELS],
+  out float depOut[PIGMENT_CHANNELS],
+  out float settledOut[PIGMENT_CHANNELS]
+) {
   float h = texture(uHeight, uv).r;
-  vec3 pigment = texture(uPigment, uv).rgb;
+  float pigment[PIGMENT_CHANNELS];
+  float dep[PIGMENT_CHANNELS];
+  float settled[PIGMENT_CHANNELS];
+  samplePigmentChannels(uPigment, uv, pigment);
+  samplePigmentChannels(uDeposits, uv, dep);
+  samplePigmentChannels(uSettled, uv, settled);
   float wet = texture(uWet, uv).r;
-  vec3 dep = texture(uDeposits, uv).rgb;
-  vec3 settled = texture(uSettled, uv).rgb;
   float paperHeight = texture(uPaperHeight, uv).r;
   float sizing = texture(uSizingMap, uv).r;
 
@@ -500,85 +679,121 @@ AbsorbResult computeAbsorb(vec2 uv) {
   float demandScale = totalDemand > 1e-6 ? min(available / totalDemand, 1.0) : 0.0;
   float absorbAmount = absorbDemand * demandScale;
   float removal = totalDemand * demandScale;
-  float newH = max(available - removal, 0.0);
+  newH = max(available - removal, 0.0);
   float remFrac = available > 1e-6 ? clamp(removal / available, 0.0, 1.0) : 0.0;
-  float valleyFactor = 1.0 + uPaperHeightStrength * (0.5 - paperHeight);
-  valleyFactor = clamp(valleyFactor, 0.1, 3.0);
+  float valleyFactor = clamp(1.0 + uPaperHeightStrength * (0.5 - paperHeight), 0.1, 3.0);
   float depBase = clamp(remFrac * (0.5 + edgeBias) + uDepBase * edgeBias, 0.0, 1.0);
   float depFrac = clamp(depBase * valleyFactor, 0.0, 1.0);
-  vec3 depAdd = pigment * depFrac;
-  dep += depAdd;
-  pigment = max(pigment - depAdd, vec3(0.0));
 
-  vec3 bloomDep = pigment * bloomFactor;
-  dep += bloomDep;
-  pigment = max(pigment - bloomDep, vec3(0.0));
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    float depAdd = pigment[i] * depFrac;
+    dep[i] += depAdd;
+    pigment[i] = max(pigment[i] - depAdd, 0.0);
+  }
 
-  vec3 settleBase = clamp(uSettle, vec3(0.0), vec3(1.0));
-  vec3 settleRate = clamp(settleBase * valleyFactor, vec3(0.0), vec3(1.0));
-  vec3 settleAdd = pigment * settleRate;
-  pigment = max(pigment - settleAdd, vec3(0.0));
-  vec3 settledNew = settled + settleAdd;
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    float bloomAdd = pigment[i] * bloomFactor;
+    dep[i] += bloomAdd;
+    pigment[i] = max(pigment[i] - bloomAdd, 0.0);
+  }
+
+  float settledNew[PIGMENT_CHANNELS];
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    float baseRate = clamp(uSettle[i], 0.0, 1.0);
+    float settleRate = clamp(baseRate * valleyFactor, 0.0, 1.0);
+    float settleAdd = pigment[i] * settleRate;
+    pigment[i] = max(pigment[i] - settleAdd, 0.0);
+    settledNew[i] = settled[i] + settleAdd;
+  }
 
   float granBase = clamp(uGranStrength * edgeBias, 0.0, 1.0);
   float granCoeff = clamp(granBase * valleyFactor, 0.0, 1.0);
-  vec3 granSource = pigment + settledNew;
-  vec3 granDep = granSource * granCoeff;
-  vec3 totalSource = max(granSource, vec3(1e-5));
-  vec3 fromPigment = granDep * (pigment / totalSource);
-  vec3 fromSettled = granDep * (settledNew / totalSource);
-  pigment = max(pigment - fromPigment, vec3(0.0));
-  settledNew = max(settledNew - fromSettled, vec3(0.0));
-  dep += granDep;
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    float source = pigment[i] + settledNew[i];
+    float granDep = source * granCoeff;
+    float denom = max(source, 1e-5);
+    float fromPigment = granDep * (pigment[i] / denom);
+    float fromSettled = granDep * (settledNew[i] / denom);
+    pigment[i] = max(pigment[i] - fromPigment, 0.0);
+    settledNew[i] = max(settledNew[i] - fromSettled, 0.0);
+    dep[i] += granDep;
+  }
 
-  float newWet = clamp(wet + absorbAmount, 0.0, 1.0);
+  newWet = clamp(wet + absorbAmount, 0.0, 1.0);
 
-  res.newH = newH;
-  res.newWet = newWet;
-  res.pigment = pigment;
-  res.dep = dep;
-  res.settled = settledNew;
-  return res;
+  for (int i = 0; i < PIGMENT_CHANNELS; ++i) {
+    pigmentOut[i] = pigment[i];
+    depOut[i] = dep[i];
+    settledOut[i] = settledNew[i];
+  }
 }
 `
 
 export const ABSORB_DEPOSIT_FRAGMENT = `
 ${ABSORB_COMMON}
+uniform int uLayerBlock;
 void main() {
-  AbsorbResult res = computeAbsorb(vUv);
-  fragColor = vec4(res.dep, 1.0);
+  float newH;
+  float newWet;
+  float pigment[PIGMENT_CHANNELS];
+  float dep[PIGMENT_CHANNELS];
+  float settled[PIGMENT_CHANNELS];
+  computeAbsorb(vUv, newH, newWet, pigment, dep, settled);
+  fragColor = packPigmentLayer(dep, uLayerBlock);
 }
 `
 
 export const ABSORB_HEIGHT_FRAGMENT = `
 ${ABSORB_COMMON}
 void main() {
-  AbsorbResult res = computeAbsorb(vUv);
-  fragColor = vec4(res.newH, 0.0, 0.0, 1.0);
+  float newH;
+  float newWet;
+  float pigment[PIGMENT_CHANNELS];
+  float dep[PIGMENT_CHANNELS];
+  float settled[PIGMENT_CHANNELS];
+  computeAbsorb(vUv, newH, newWet, pigment, dep, settled);
+  fragColor = vec4(newH, 0.0, 0.0, 1.0);
 }
 `
 
 export const ABSORB_PIGMENT_FRAGMENT = `
 ${ABSORB_COMMON}
+uniform int uLayerBlock;
 void main() {
-  AbsorbResult res = computeAbsorb(vUv);
-  fragColor = vec4(res.pigment, 1.0);
+  float newH;
+  float newWet;
+  float pigment[PIGMENT_CHANNELS];
+  float dep[PIGMENT_CHANNELS];
+  float settled[PIGMENT_CHANNELS];
+  computeAbsorb(vUv, newH, newWet, pigment, dep, settled);
+  fragColor = packPigmentLayer(pigment, uLayerBlock);
 }
 `
 
 export const ABSORB_WET_FRAGMENT = `
 ${ABSORB_COMMON}
 void main() {
-  AbsorbResult res = computeAbsorb(vUv);
-  fragColor = vec4(res.newWet, 0.0, 0.0, 1.0);
+  float newH;
+  float newWet;
+  float pigment[PIGMENT_CHANNELS];
+  float dep[PIGMENT_CHANNELS];
+  float settled[PIGMENT_CHANNELS];
+  computeAbsorb(vUv, newH, newWet, pigment, dep, settled);
+  fragColor = vec4(newWet, 0.0, 0.0, 1.0);
 }
 `
 
 export const ABSORB_SETTLED_FRAGMENT = `
 ${ABSORB_COMMON}
+uniform int uLayerBlock;
 void main() {
-  AbsorbResult res = computeAbsorb(vUv);
-  fragColor = vec4(res.settled, 1.0);
+  float newH;
+  float newWet;
+  float pigment[PIGMENT_CHANNELS];
+  float dep[PIGMENT_CHANNELS];
+  float settled[PIGMENT_CHANNELS];
+  computeAbsorb(vUv, newH, newWet, pigment, dep, settled);
+  fragColor = packPigmentLayer(settled, uLayerBlock);
 }
 `
 
@@ -586,7 +801,8 @@ export const EVAPORATION_RING_FRAGMENT = `
 precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
-uniform sampler2D uDeposits;
+${PIGMENT_ARRAY_UTILS}
+uniform highp sampler2DArray uDeposits;
 uniform sampler2D uWet;
 uniform sampler2D uHeight;
 uniform vec2 uTexel;
@@ -595,10 +811,7 @@ uniform float uDt;
 uniform float uFilmThreshold;
 uniform float uFilmFeather;
 uniform float uGradientScale;
-
-vec3 sampleDeposits(vec2 uv) {
-  return texture(uDeposits, uv).rgb;
-}
+uniform int uLayerBlock;
 
 float sampleWet(vec2 uv) {
   return texture(uWet, uv).r;
@@ -612,14 +825,19 @@ float filmMask(float h) {
   return 1.0 - smoothstep(uFilmThreshold, uFilmThreshold + uFilmFeather, h);
 }
 
+void sampleDepositChannels(vec2 uv, out float channels[PIGMENT_CHANNELS]) {
+  samplePigmentChannels(uDeposits, uv, channels);
+}
+
 void main() {
-  vec3 dep = sampleDeposits(vUv);
+  float dep[PIGMENT_CHANNELS];
+  sampleDepositChannels(vUv, dep);
   float wet = clamp(sampleWet(vUv), 0.0, 1.0);
   float height = sampleHeight(vUv);
   float localThin = filmMask(height);
   float ringFactor = max(uStrength, 0.0) * max(uDt, 0.0);
   if (ringFactor <= 0.0) {
-    fragColor = vec4(dep, 1.0);
+    fragColor = packPigmentLayer(dep, uLayerBlock);
     return;
   }
 
@@ -630,7 +848,8 @@ void main() {
     vec2(0.0, uTexel.y)
   );
 
-  vec3 incoming = vec3(0.0);
+  float incoming[PIGMENT_CHANNELS];
+  zeroPigmentChannels(incoming);
   float outgoing = 0.0;
   float gradScale = max(uGradientScale, 0.0);
 
@@ -638,7 +857,8 @@ void main() {
     vec2 off = offsets[i];
     float wetN = clamp(sampleWet(vUv + off), 0.0, 1.0);
     float heightN = sampleHeight(vUv + off);
-    vec3 depN = sampleDeposits(vUv + off);
+    float depNeighbor[PIGMENT_CHANNELS];
+    sampleDepositChannels(vUv + off, depNeighbor);
 
     float thinN = filmMask(heightN);
     float pairThin = max(localThin, thinN);
@@ -654,13 +874,20 @@ void main() {
     if (diff > 0.0) {
       outgoing += weight * diff;
     } else if (diff < 0.0) {
-      incoming += weight * (-diff) * depN;
+      float inflow = weight * (-diff);
+      for (int c = 0; c < PIGMENT_CHANNELS; ++c) {
+        incoming[c] += inflow * depNeighbor[c];
+      }
     }
   }
 
-  vec3 delta = ringFactor * (incoming - dep * outgoing);
-  vec3 newDep = max(dep + delta, vec3(0.0));
-  fragColor = vec4(newDep, 1.0);
+  float result[PIGMENT_CHANNELS];
+  for (int c = 0; c < PIGMENT_CHANNELS; ++c) {
+    float delta = ringFactor * (incoming[c] - dep[c] * outgoing);
+    result[c] = max(dep[c] + delta, 0.0);
+  }
+
+  fragColor = packPigmentLayer(result, uLayerBlock);
 }
 `
 
@@ -821,12 +1048,9 @@ export const COMPOSITE_FRAGMENT = `
 precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
-uniform sampler2D uDeposits;
+${PIGMENT_ARRAY_UTILS}
+uniform highp sampler2DArray uDeposits;
 uniform vec3 uPaper;
-uniform vec3 uK[3];
-uniform vec3 uS[3];
-uniform float uBinderScatter;
-uniform float uLayerScale;
 
 // Number of wavelength samples used for the discretised reflectance curves.
 // The distribution mirrors the JavaScript implementation (roughly 10 nm steps
@@ -933,7 +1157,7 @@ void rgbwcmy_to_reflectance(float rgbwcmy[7], inout float R[WAVELEN_SAMPS_SIZE])
   R[37] = max(EPSILON, w * 1.0005449969930000 + c * 0.0145038009464639 + m * 0.9722813248265600 + y * 0.9847028681227950 + r * 0.9856965214637620 + g * 0.0281260133612096 + b * 0.0157648801149616);
 }
 
-vec3 xyz_to_srgb(vec3 xyz) {
+vec3 xyz_to_linear_rgb(vec3 xyz) {
   mat3 XYZ_RGB;
 
   XYZ_RGB[0] = vec3( 3.2409699419045200, -1.537383177570090, -0.4986107602930030);
@@ -944,7 +1168,11 @@ vec3 xyz_to_srgb(vec3 xyz) {
   float g = dot(XYZ_RGB[1], xyz);
   float b = dot(XYZ_RGB[2], xyz);
 
-  return linear_to_srgb(vec3(r, g, b));
+  return vec3(r, g, b);
+}
+
+vec3 xyz_to_srgb(vec3 xyz) {
+  return linear_to_srgb(xyz_to_linear_rgb(xyz));
 }
 
 vec3 reflectance_to_xyz(float R[WAVELEN_SAMPS_SIZE]) {
@@ -1004,23 +1232,53 @@ float KM(float KS) {
   return 1.0 + KS - sqrt(pow(KS, 2.0) + 2.0 * KS);
 }
 
-vec3 infiniteLayer(vec3 K, vec3 S) {
-  vec3 safeS = max(S, vec3(1e-3));
-  vec3 r = 1.0 + K / safeS;
-  vec3 disc = max(r * r - vec3(1.0), vec3(0.0));
-  return clamp(r - sqrt(disc), vec3(0.0), vec3(1.0));
-}
-
 void main() {
-  vec3 dep = texture(uDeposits, vUv).rgb;
-  vec3 K = dep.r * uK[0] + dep.g * uK[1] + dep.b * uK[2];
-  vec3 S = vec3(uBinderScatter) + dep.r * uS[0] + dep.g * uS[1] + dep.b * uS[2];
-  float density = dot(dep, vec3(1.0));
-  float layerK = 1.0 + uLayerScale * density;
-  float layerS = 1.0 + 0.5 * uLayerScale * density;
-  vec3 R = infiniteLayer(K * layerK, S * layerS);
-  vec3 col = clamp(R * uPaper, vec3(0.0), vec3(1.0));
-  fragColor = vec4(col, 1.0);
+  float channels[PIGMENT_CHANNELS];
+  samplePigmentChannels(uDeposits, vUv, channels);
+
+  float ksMix[WAVELEN_SAMPS_SIZE];
+  for (int i = 0; i < WAVELEN_SAMPS_SIZE; ++i) {
+    ksMix[i] = 0.0;
+  }
+
+  float basis[PIGMENT_CHANNELS];
+  float total = 0.0;
+  for (int c = 0; c < PIGMENT_CHANNELS; ++c) {
+    zeroPigmentChannels(basis);
+    basis[c] = channels[c];
+    float Rc[WAVELEN_SAMPS_SIZE];
+    rgbwcmy_to_reflectance(basis, Rc);
+    vec3 xyz = reflectance_to_xyz(Rc);
+    float luminance = xyz.y;
+    luminance = pow(luminance, 2.0);
+    if (luminance <= 0.0) {
+      continue;
+    }
+    total += luminance;
+    for (int i = 0; i < WAVELEN_SAMPS_SIZE; ++i) {
+      ksMix[i] += KS(Rc[i]) * luminance;
+    }
+  }
+
+
+  float reflectanceMix[WAVELEN_SAMPS_SIZE];
+
+  //1e-5
+  
+  for (int i = 0; i < WAVELEN_SAMPS_SIZE; ++i) {
+    if (total <= 0.00001) {
+      reflectanceMix[i] = 0.0;
+    } else {
+      float ks = max(ksMix[i] / total, 0.0);
+      reflectanceMix[i] = clamp(KM(ks), 0.0, 1.0);
+    }
+  }
+
+  vec3 xyz = reflectance_to_xyz(reflectanceMix);
+  vec3 linearRgb = xyz_to_linear_rgb(xyz);
+  linearRgb *= uPaper;
+  vec3 srgb = linear_to_srgb(clamp(linearRgb, vec3(0.0), vec3(1.0)));
+  fragColor = vec4(srgb, 1.0);
 }
 `
 

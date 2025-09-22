@@ -13,10 +13,12 @@ export interface BrushMaskInstance {
   velocityStrength?: number
 }
 
+export type PigmentChannels = [number, number, number, number, number, number, number]
+
 export interface BrushSettings {
   flow: number
   type: BrushType
-  color: [number, number, number]
+  color: PigmentChannels
   dryness?: number
   dryThreshold?: number
   lowSolvent?: number
@@ -26,26 +28,20 @@ export interface BrushSettings {
   mask: BrushMaskInstance
 }
 
-export type ChannelCoefficients = [number, number, number]
-
-export type PigmentOpticalTable = readonly [
-  ChannelCoefficients,
-  ChannelCoefficients,
-  ChannelCoefficients,
+export type ChannelCoefficients = [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
 ]
 
-export interface PigmentOpticalSettings {
-  absorption: PigmentOpticalTable
-  scattering: PigmentOpticalTable
-  binderScatter: number
-}
-
 export interface PigmentCoefficients {
-  diffusion?: ChannelCoefficients
-  settle?: ChannelCoefficients
-  absorption?: PigmentOpticalTable
-  scattering?: PigmentOpticalTable
-  binderScatter?: number
+  diffusion?: PigmentChannels
+  settle?: PigmentChannels
+  rewet?: PigmentChannels
 }
 
 export interface BinderParams {

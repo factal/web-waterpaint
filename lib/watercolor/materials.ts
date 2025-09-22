@@ -44,22 +44,16 @@ import {
   DEFAULT_RING_PARAMS,
   GRANULATION_STRENGTH,
   HUMIDITY_INFLUENCE,
-  KM_LAYER_SCALE,
   PAPER_COLOR,
   PAPER_DIFFUSION_STRENGTH,
-  PIGMENT_DIFFUSION_COEFF,
   PIGMENT_REWET,
+  PIGMENT_CHANNELS,
+  DEFAULT_PIGMENT_DIFFUSION,
+  DEFAULT_PIGMENT_SETTLE,
 } from './constants'
-import {
-  type PigmentOpticalSettings,
-  type PigmentOpticalTable,
-} from './types'
 import { type DiffuseWetMaterial, type MaterialMap } from './types'
 
 const sanitizeShader = (code: string) => code.trimStart()
-
-const vectorizeOpticalTable = (table: PigmentOpticalTable) =>
-  table.map((coeffs) => new THREE.Vector3(coeffs[0], coeffs[1], coeffs[2]))
 
 function createMaterial(
   fragmentShader: string,
@@ -81,7 +75,6 @@ export function createMaterials(
   fiberTexture: THREE.DataTexture,
   paperHeightTexture: THREE.DataTexture,
   sizingTexture: THREE.DataTexture,
-  pigmentOptics: PigmentOpticalSettings,
 ): MaterialMap {
   const defaultMaskData = new Uint8Array([255, 255, 255, 255])
   const defaultMask = new THREE.DataTexture(defaultMaskData, 1, 1, THREE.RGBAFormat)
@@ -91,7 +84,7 @@ export function createMaterials(
   defaultMask.magFilter = THREE.LinearFilter
   defaultMask.minFilter = THREE.LinearFilter
 
-  const pigmentUniform = () => ({ value: new THREE.Vector3(0, 0, 0) })
+  const pigmentUniform = () => ({ value: new Float32Array(PIGMENT_CHANNELS) })
   const maskUniforms = () => ({
     uMask: { value: defaultMask },
     uMaskStrength: { value: 1 },
@@ -149,6 +142,7 @@ export function createMaterials(
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    uLayerBlock: { value: 0 },
     ...maskUniforms(),
   })
 
@@ -173,6 +167,7 @@ export function createMaterials(
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    uLayerBlock: { value: 0 },
     ...maskUniforms(),
   })
 
@@ -181,10 +176,11 @@ export function createMaterials(
     uDeposits: { value: null },
     uFlow: { value: 0 },
     uRewetStrength: { value: DEFAULT_REWET_STRENGTH },
-    uRewetPerChannel: { value: PIGMENT_REWET.clone() },
+    uRewetPerChannel: { value: new Float32Array(PIGMENT_REWET) },
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    uLayerBlock: { value: 0 },
     ...maskUniforms(),
   })
 
@@ -192,10 +188,11 @@ export function createMaterials(
     uSource: { value: null },
     uFlow: { value: 0 },
     uRewetStrength: { value: DEFAULT_REWET_STRENGTH },
-    uRewetPerChannel: { value: PIGMENT_REWET.clone() },
+    uRewetPerChannel: { value: new Float32Array(PIGMENT_REWET) },
     uPaperHeight: { value: paperHeightTexture },
     uDryThreshold: { value: 0.45 },
     uDryInfluence: { value: 0 },
+    uLayerBlock: { value: 0 },
     ...maskUniforms(),
   })
 
@@ -233,19 +230,15 @@ export function createMaterials(
     uPigment: { value: null },
     uVelocity: { value: null },
     uDt: { value: DEFAULT_DT },
+    uLayerBlock: { value: 0 },
   })
 
   const diffusePigment = createMaterial(PIGMENT_DIFFUSION_FRAGMENT, {
     uPigment: { value: null },
     uTexel: { value: texelSize.clone() },
-    uDiffusion: {
-      value: new THREE.Vector3(
-        PIGMENT_DIFFUSION_COEFF,
-        PIGMENT_DIFFUSION_COEFF,
-        PIGMENT_DIFFUSION_COEFF,
-      ),
-    },
+    uDiffusion: { value: new Float32Array(DEFAULT_PIGMENT_DIFFUSION) },
     uDt: { value: DEFAULT_DT },
+    uLayerBlock: { value: 0 },
   })
 
   const advectBinder = createMaterial(ADVECT_BINDER_FRAGMENT, {
@@ -286,7 +279,7 @@ export function createMaterials(
     uAbsorbTimeOffset: { value: DEFAULT_ABSORB_TIME_OFFSET },
     uAbsorbFloor: { value: DEFAULT_ABSORB_MIN_FLUX },
     uHumidity: { value: HUMIDITY_INFLUENCE },
-    uSettle: { value: new THREE.Vector3(0, 0, 0) },
+    uSettle: { value: new Float32Array(DEFAULT_PIGMENT_SETTLE) },
     uGranStrength: { value: GRANULATION_STRENGTH },
     uBackrunStrength: { value: 0 },
     uPaperHeightStrength: { value: 0 },
@@ -295,10 +288,16 @@ export function createMaterials(
   })
 
   const absorbDeposit = createMaterial(ABSORB_DEPOSIT_FRAGMENT, absorbUniforms())
+  const absorbDepositUniforms = absorbDeposit.uniforms as Record<string, THREE.IUniform>
+  absorbDepositUniforms.uLayerBlock = { value: 0 }
   const absorbHeight = createMaterial(ABSORB_HEIGHT_FRAGMENT, absorbUniforms())
   const absorbPigment = createMaterial(ABSORB_PIGMENT_FRAGMENT, absorbUniforms())
+  const absorbPigmentUniforms = absorbPigment.uniforms as Record<string, THREE.IUniform>
+  absorbPigmentUniforms.uLayerBlock = { value: 0 }
   const absorbWet = createMaterial(ABSORB_WET_FRAGMENT, absorbUniforms())
   const absorbSettled = createMaterial(ABSORB_SETTLED_FRAGMENT, absorbUniforms())
+  const absorbSettledUniforms = absorbSettled.uniforms as Record<string, THREE.IUniform>
+  absorbSettledUniforms.uLayerBlock = { value: 0 }
 
   const evaporationRings = createMaterial(EVAPORATION_RING_FRAGMENT, {
     uDeposits: { value: null },
@@ -310,6 +309,7 @@ export function createMaterials(
     uFilmThreshold: { value: DEFAULT_RING_PARAMS.filmThreshold },
     uFilmFeather: { value: DEFAULT_RING_PARAMS.filmFeather },
     uGradientScale: { value: DEFAULT_RING_PARAMS.gradientScale },
+    uLayerBlock: { value: 0 },
   })
 
   const diffuseWet = createMaterial(PAPER_DIFFUSION_FRAGMENT, {
@@ -344,10 +344,6 @@ export function createMaterials(
   const composite = createMaterial(COMPOSITE_FRAGMENT, {
     uDeposits: { value: null },
     uPaper: { value: PAPER_COLOR.clone() },
-    uK: { value: vectorizeOpticalTable(pigmentOptics.absorption) },
-    uS: { value: vectorizeOpticalTable(pigmentOptics.scattering) },
-    uBinderScatter: { value: pigmentOptics.binderScatter },
-    uLayerScale: { value: KM_LAYER_SCALE },
   })
 
   return {

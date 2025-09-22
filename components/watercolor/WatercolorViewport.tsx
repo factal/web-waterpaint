@@ -3,7 +3,12 @@
 import { useCallback, useEffect, useRef } from 'react'
 import View from '@/components/canvas/View'
 import WatercolorScene from './WatercolorScene'
-import WatercolorSimulation, { type BrushType, type SimulationParams } from '@/lib/watercolor/WatercolorSimulation'
+import WatercolorSimulation, {
+  type BrushType,
+  type SimulationParams,
+  PIGMENT_CHANNELS,
+} from '@/lib/watercolor/WatercolorSimulation'
+import { type PigmentChannels } from '@/lib/watercolor/types'
 import StrokeMaskBuilder, { type MaskStamp } from '@/lib/watercolor/maskBuilder'
 import { type DebugView } from './debugViews'
 import type { Texture } from 'three'
@@ -31,7 +36,7 @@ export type ViewportBrush = {
   radius: number
   flow: number
   type: BrushType
-  color: [number, number, number]
+  color: PigmentChannels
   pasteMode?: boolean
   binderBoost?: number
   pigmentBoost?: number
@@ -83,7 +88,7 @@ type BrushStamp = {
   dryness: number
   dryThreshold?: number
   lowSolvent: number
-  color: [number, number, number]
+  color: PigmentChannels
   velocity: [number, number]
 }
 
@@ -188,7 +193,7 @@ const WatercolorViewport = ({
       let lowSolventSum = 0
       let dryThresholdSum = 0
       let dryThresholdWeight = 0
-      const colorSum: [number, number, number] = [0, 0, 0]
+      const colorSum = new Array<number>(PIGMENT_CHANNELS).fill(0)
       let colorWeight = 0
       let velocitySumX = 0
       let velocitySumY = 0
@@ -202,9 +207,9 @@ const WatercolorViewport = ({
         strengthSum += stamp.mask.strength * weight
         drynessSum += stamp.dryness * weight
         lowSolventSum += stamp.lowSolvent * weight
-        colorSum[0] += stamp.color[0] * weight
-        colorSum[1] += stamp.color[1] * weight
-        colorSum[2] += stamp.color[2] * weight
+        for (let i = 0; i < PIGMENT_CHANNELS; i += 1) {
+          colorSum[i] += stamp.color[i] * weight
+        }
         colorWeight += weight
         const velWeight = Math.max(stamp.flow, 0) * weight
         velocitySumX += stamp.velocity[0] * velWeight
@@ -222,14 +227,9 @@ const WatercolorViewport = ({
       const lowSolvent = totalWeight > 0 ? lowSolventSum / totalWeight : 0
       const dryThreshold =
         dryThresholdWeight > 0 ? dryThresholdSum / dryThresholdWeight : undefined
-      const color: [number, number, number] =
-        colorWeight > 0
-          ? [
-              colorSum[0] / colorWeight,
-              colorSum[1] / colorWeight,
-              colorSum[2] / colorWeight,
-            ]
-          : [0, 0, 0]
+      const color: PigmentChannels = Array.from({ length: PIGMENT_CHANNELS }, (_, i) =>
+        colorWeight > 0 ? colorSum[i] / colorWeight : 0,
+      ) as PigmentChannels
       const velocityVecX = velocityWeight > 0 ? velocitySumX / velocityWeight : 0
       const velocityVecY = velocityWeight > 0 ? velocitySumY / velocityWeight : 0
       const velocityStrength = Math.hypot(velocityVecX, velocityVecY)
@@ -373,14 +373,9 @@ const WatercolorViewport = ({
         maskSettings.strength * (0.65 + 0.35 * (1 - wetness)),
       )
 
-      const color: [number, number, number] =
-        brushState.type === 'pigment'
-          ? [
-              brushState.color[0] * pigmentRatio,
-              brushState.color[1] * pigmentRatio,
-              brushState.color[2] * pigmentRatio,
-            ]
-          : [0, 0, 0]
+      const color: PigmentChannels = Array.from({ length: PIGMENT_CHANNELS }, (_, i) =>
+        brushState.type === 'pigment' ? brushState.color[i] * pigmentRatio : 0,
+      ) as PigmentChannels
 
       stroke.stamps.push({
         mask: {
@@ -579,11 +574,9 @@ const WatercolorViewport = ({
         const flowVariation = 1 + (Math.random() - 0.5) * 2 * flowJitter
         const dropletFlow = Math.max(0.02, dropletFlowBase * flowVariation)
 
-        const color: [number, number, number] = [
-          baseColor[0] * pigmentRatio,
-          baseColor[1] * pigmentRatio,
-          baseColor[2] * pigmentRatio,
-        ]
+        const color: PigmentChannels = Array.from({ length: PIGMENT_CHANNELS }, (_, i) =>
+          baseColor[i] * pigmentRatio,
+        ) as PigmentChannels
 
         const depositBoost = Math.max(pigmentBoost, 1 + sizeNorm * 0.8)
 

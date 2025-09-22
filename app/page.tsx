@@ -20,20 +20,19 @@ import {
   DEFAULT_ABSORB_MIN_FLUX,
   DEFAULT_ABSORB_TIME_OFFSET,
   DEFAULT_BINDER_PARAMS,
-  DEFAULT_BINDER_SCATTER,
   DEFAULT_PAPER_TEXTURE_STRENGTH,
   DEFAULT_SIZING_INFLUENCE,
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
   DEFAULT_RING_PARAMS,
-  PIGMENT_DIFFUSION_COEFF,
   GRANULATION_SETTLE_RATE,
-  PIGMENT_K,
-  PIGMENT_S,
+  PIGMENT_CHANNELS,
+  DEFAULT_PIGMENT_DIFFUSION,
+  DEFAULT_PIGMENT_SETTLE,
   type BrushType,
-  type ChannelCoefficients,
   type SimulationParams,
 } from '@/lib/watercolor/WatercolorSimulation'
+import { type PigmentChannels } from '@/lib/watercolor/types'
 
 const SIM_SIZE = 512
 
@@ -127,50 +126,71 @@ function createBrushMaskAssets(density: number): Record<BrushMaskId, BrushMaskAs
   }
 }
 
-type PigmentTuple = [number, number, number]
-
-type PigmentSlot = {
-  mass: PigmentTuple
-}
+type RgbColor = [number, number, number]
 
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1)
 
-const sanitizePigmentMass = (mass: PigmentTuple): PigmentTuple => {
-  const sanitized: PigmentTuple = [
-    Number.isFinite(mass[0]) ? clamp01(mass[0]) : 0,
-    Number.isFinite(mass[1]) ? clamp01(mass[1]) : 0,
-    Number.isFinite(mass[2]) ? clamp01(mass[2]) : 0,
-  ]
-  return sanitized
+const srgbToLinear = (value: number) =>
+  value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4)
+
+const sanitizeRgb = (rgb: RgbColor): RgbColor => [
+  clamp01(rgb[0]),
+  clamp01(rgb[1]),
+  clamp01(rgb[2]),
+] as RgbColor
+
+const rgbToPigmentChannels = (rgb: RgbColor): PigmentChannels => {
+  const linearR = srgbToLinear(rgb[0])
+  const linearG = srgbToLinear(rgb[1])
+  const linearB = srgbToLinear(rgb[2])
+
+  let r = linearR
+  let g = linearG
+  let b = linearB
+
+  const channels = new Array<number>(PIGMENT_CHANNELS).fill(0)
+
+  const w = Math.min(r, Math.min(g, b))
+  r -= w
+  g -= w
+  b -= w
+
+  const c = Math.min(g, b)
+  const m = Math.min(r, b)
+  const y = Math.min(r, g)
+
+  const rSingle = Math.min(Math.max(0, r - b), Math.max(0, r - g))
+  const gSingle = Math.min(Math.max(0, g - b), Math.max(0, g - r))
+  const bSingle = Math.min(Math.max(0, b - g), Math.max(0, b - r))
+
+  channels[0] = clamp01(rSingle)
+  channels[1] = clamp01(gSingle)
+  channels[2] = clamp01(bSingle)
+  channels[3] = clamp01(w)
+  channels[4] = clamp01(c)
+  channels[5] = clamp01(m)
+  channels[6] = clamp01(y)
+
+  return channels as PigmentChannels
 }
 
-const pigmentMassToRgb = (mass: PigmentTuple): PigmentTuple => {
-  const sanitized = sanitizePigmentMass(mass)
-  return [
-    clamp01(1 - sanitized[0]),
-    clamp01(1 - sanitized[1]),
-    clamp01(1 - sanitized[2]),
-  ]
-}
-
-const rgbToPigmentMass = (rgb: PigmentTuple): PigmentTuple => {
-  const sanitized: PigmentTuple = [
-    clamp01(rgb[0]),
-    clamp01(rgb[1]),
-    clamp01(rgb[2]),
-  ]
-  return sanitizePigmentMass([
-    1 - sanitized[0],
-    1 - sanitized[1],
-    1 - sanitized[2],
-  ])
-}
-
-const DEFAULT_PIGMENTS: PigmentSlot[] = [
-  { mass: sanitizePigmentMass([1, 0, 0]) },
-  { mass: sanitizePigmentMass([0, 1, 0]) },
-  { mass: sanitizePigmentMass([0, 0, 1]) },
+const DEFAULT_PIGMENT_PRESETS: RgbColor[] = [
+  [1, 0, 0],
+  [0, 1, 0],
+  [0, 0, 1],
+  [1, 1, 1],
+  [0, 1, 1],
+  [1, 0, 1],
+  [1, 1, 0],
 ]
+
+const DEFAULT_PIGMENTS: PigmentPickerSlot[] = DEFAULT_PIGMENT_PRESETS.map((rgb) => {
+  const sanitized = sanitizeRgb(rgb)
+  return {
+    display: sanitized,
+    channels: rgbToPigmentChannels(sanitized),
+  }
+})
 
 
 function toolToBrushType(tool: BrushTool): BrushType {
@@ -215,27 +235,23 @@ export default function Home() {
     waterConsumption: 0.028,
     pigmentConsumption: 0.022,
   })
-  const [pigments, setPigments] = useState<PigmentSlot[]>(() =>
-    DEFAULT_PIGMENTS.map((slot) => ({
-      mass: [...slot.mass] as PigmentTuple,
-    })),
-  )
+const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
+  DEFAULT_PIGMENTS.map((slot) => ({
+    display: [...slot.display] as RgbColor,
+    channels: [...slot.channels] as PigmentChannels,
+  })),
+)
 
-  const pigmentSlots = useMemo<PigmentPickerSlot[]>(
-    () =>
-      pigments.map((slot) => ({
-        mass: slot.mass,
-        color: pigmentMassToRgb(slot.mass),
-      })),
-    [pigments],
-  )
-
-  const handlePigmentColorChange = useCallback((index: number, color: PigmentTuple) => {
+  const handlePigmentColorChange = useCallback((index: number, color: RgbColor) => {
     setPigments((previous) => {
       if (!previous[index]) return previous
       return previous.map((slot, slotIndex) => {
         if (slotIndex !== index) return slot
-        return { mass: rgbToPigmentMass(color) }
+        const sanitized = sanitizeRgb(color)
+        return {
+          display: sanitized,
+          channels: rgbToPigmentChannels(sanitized),
+        }
       })
     })
   }, [])
@@ -353,13 +369,6 @@ export default function Home() {
       value: DEFAULT_BINDER_PARAMS.buoyancy,
       min: -1,
       max: 1,
-      step: 0.01,
-    },
-    binderScatter: {
-      label: 'Binder Haze',
-      value: DEFAULT_BINDER_SCATTER,
-      min: 0,
-      max: 0.6,
       step: 0.01,
     },
   })
@@ -482,14 +491,12 @@ export default function Home() {
     elasticity: binderElasticity,
     viscosity: binderViscosity,
     buoyancy: binderBuoyancy,
-    binderScatter,
   } = binderControls as {
     diffusion: number
     decay: number
     elasticity: number
     viscosity: number
     buoyancy: number
-    binderScatter: number
   }
   const { binderCharge, waterLoad } = mediumSettings
   const { pasteMode, pasteBinderBoost, pastePigmentBoost } = pasteSettings
@@ -537,7 +544,7 @@ export default function Home() {
   const pigmentIndex = tool === 'water' ? -1 : parseInt(tool.slice(-1), 10)
   const pigmentIndicatorColor =
     pigmentIndex >= 0 && pigments[pigmentIndex]
-      ? pigmentMassToRgb(pigments[pigmentIndex].mass)
+      ? pigments[pigmentIndex].display
       : null
 
   const maskAssets = useMemo(() => createBrushMaskAssets(streakDensity), [streakDensity])
@@ -555,9 +562,9 @@ export default function Home() {
     () => {
       const brushType = toolToBrushType(tool)
       const pigment = pigmentIndex >= 0 ? pigments[pigmentIndex] : undefined
-      const color = pigment
-        ? ([...pigment.mass] as [number, number, number])
-        : ([0, 0, 0] as [number, number, number])
+      const color: PigmentChannels = pigment
+        ? ([...pigment.channels] as PigmentChannels)
+        : (Array.from({ length: PIGMENT_CHANNELS }, () => 0) as PigmentChannels)
       const minSize = Math.max(0.01, Math.min(spatterSizeMin, spatterSizeMax))
       const maxSize = Math.max(minSize + 1e-4, Math.max(spatterSizeMin, spatterSizeMax))
       const spread = Math.min(Math.max(spatterSpreadAngle, 0), 360)
@@ -677,19 +684,8 @@ export default function Home() {
       pigmentConsumption,
     },
     pigmentCoefficients: {
-      diffusion: [
-        PIGMENT_DIFFUSION_COEFF,
-        PIGMENT_DIFFUSION_COEFF,
-        PIGMENT_DIFFUSION_COEFF,
-      ] as ChannelCoefficients,
-      settle: [
-        GRANULATION_SETTLE_RATE,
-        GRANULATION_SETTLE_RATE,
-        GRANULATION_SETTLE_RATE,
-      ] as ChannelCoefficients,
-      absorption: PIGMENT_K,
-      scattering: PIGMENT_S,
-      binderScatter,
+      diffusion: DEFAULT_PIGMENT_DIFFUSION,
+      settle: DEFAULT_PIGMENT_SETTLE,
     },
   }), [
     grav,
@@ -730,7 +726,6 @@ export default function Home() {
     pigmentCapacity,
     waterConsumption,
     pigmentConsumption,
-    binderScatter,
   ])
 
   return (
@@ -745,7 +740,7 @@ export default function Home() {
           paste={pasteSettings}
           spatter={spatterSettings}
           reservoir={reservoirSettings}
-          pigments={pigmentSlots}
+          pigments={pigments}
           onBrushChange={handleBrushChange}
           onMediumChange={handleMediumChange}
           onPasteChange={handlePasteChange}

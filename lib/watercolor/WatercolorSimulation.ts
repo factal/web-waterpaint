@@ -9,6 +9,7 @@ import {
   createSizingField,
 } from './targets'
 import StrokeMaskBuilder from './maskBuilder'
+const PIGMENT_LAYER_COUNT = Math.ceil(PIGMENT_CHANNELS / 4)
 import {
   DEFAULT_BINDER_PARAMS,
   DEFAULT_DT,
@@ -16,11 +17,13 @@ import {
   GRANULATION_SETTLE_RATE,
   GRANULATION_STRENGTH,
   HUMIDITY_INFLUENCE,
-  PIGMENT_DIFFUSION_COEFF,
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
   DEFAULT_RING_PARAMS,
-  DEFAULT_PIGMENT_OPTICS,
+  PIGMENT_CHANNELS,
+  DEFAULT_PIGMENT_DIFFUSION,
+  DEFAULT_PIGMENT_SETTLE,
+  PIGMENT_REWET,
 } from './constants'
 import {
   type BinderParams,
@@ -83,11 +86,11 @@ export default class WatercolorSimulation {
     this.targets = {
       H: createPingPong(size, textureType),
       UV: createPingPong(size, textureType),
-      C: createPingPong(size, textureType),
+      C: createPingPong(size, textureType, PIGMENT_LAYER_COUNT),
       B: createPingPong(size, textureType),
-      DEP: createPingPong(size, textureType),
+      DEP: createPingPong(size, textureType, PIGMENT_LAYER_COUNT),
       W: createPingPong(size, textureType),
-      S: createPingPong(size, textureType),
+      S: createPingPong(size, textureType, PIGMENT_LAYER_COUNT),
     }
     this.compositeTarget = createRenderTarget(size, textureType)
     this.pressure = createPingPong(size, textureType)
@@ -104,7 +107,6 @@ export default class WatercolorSimulation {
       this.fiberTexture,
       this.paperHeightMap,
       this.sizingMap,
-      DEFAULT_PIGMENT_OPTICS,
     )
 
     this.maskBuilder = new StrokeMaskBuilder(
@@ -275,11 +277,11 @@ export default class WatercolorSimulation {
     splatPigment.uniforms.uSource.value = this.targets.C.read.texture
     splatPigment.uniforms.uFlow.value = normalizedFlow
     splatPigment.uniforms.uToolType.value = toolType
-    const pigmentUniform = splatPigment.uniforms.uPigment.value as THREE.Vector3
-    pigmentUniform.set(color[0], color[1], color[2])
+    const pigmentUniform = splatPigment.uniforms.uPigment.value as Float32Array
+    pigmentUniform.set(color)
     splatPigment.uniforms.uLowSolvent.value = solvent
     splatPigment.uniforms.uBoost.value = pigmentTarget
-    this.renderToTarget(splatPigment, this.targets.C.write)
+    this.renderPigmentLayers(splatPigment, this.targets.C.write)
     this.targets.C.swap()
 
     const splatBinder = this.materials.splatBinder
@@ -295,11 +297,11 @@ export default class WatercolorSimulation {
       const splatDeposit = this.materials.splatDeposit
       splatDeposit.uniforms.uSource.value = this.targets.DEP.read.texture
       splatDeposit.uniforms.uFlow.value = normalizedFlow
-      const depositPigment = splatDeposit.uniforms.uPigment.value as THREE.Vector3
-      depositPigment.set(color[0], color[1], color[2])
+      const depositPigment = splatDeposit.uniforms.uPigment.value as Float32Array
+      depositPigment.set(color)
       splatDeposit.uniforms.uLowSolvent.value = solvent
       splatDeposit.uniforms.uBoost.value = depositTarget
-      this.renderToTarget(splatDeposit, this.targets.DEP.write)
+      this.renderPigmentLayers(splatDeposit, this.targets.DEP.write)
       this.targets.DEP.swap()
     }
 
@@ -308,13 +310,13 @@ export default class WatercolorSimulation {
       rewetPigment.uniforms.uSource.value = this.targets.C.read.texture
       rewetPigment.uniforms.uDeposits.value = this.targets.DEP.read.texture
       rewetPigment.uniforms.uFlow.value = normalizedFlow
-      this.renderToTarget(rewetPigment, this.targets.C.write)
+      this.renderPigmentLayers(rewetPigment, this.targets.C.write)
       this.targets.C.swap()
 
       const rewetDeposit = this.materials.splatRewetDeposit
       rewetDeposit.uniforms.uSource.value = this.targets.DEP.read.texture
       rewetDeposit.uniforms.uFlow.value = normalizedFlow
-      this.renderToTarget(rewetDeposit, this.targets.DEP.write)
+      this.renderPigmentLayers(rewetDeposit, this.targets.DEP.write)
       this.targets.DEP.swap()
     }
 
@@ -372,43 +374,13 @@ export default class WatercolorSimulation {
       ...evaporationRings,
     }
 
-    const absorptionTable = pigmentCoefficients?.absorption ?? DEFAULT_PIGMENT_OPTICS.absorption
-    const scatteringTable = pigmentCoefficients?.scattering ?? DEFAULT_PIGMENT_OPTICS.scattering
-    const binderScatter = Math.max(
-      pigmentCoefficients?.binderScatter ?? DEFAULT_PIGMENT_OPTICS.binderScatter,
-      0,
-    )
-    const compositeUniforms = this.materials.composite.uniforms as Record<string, THREE.IUniform>
-    const kUniform = compositeUniforms.uK.value as THREE.Vector3[]
-    const sUniform = compositeUniforms.uS.value as THREE.Vector3[]
-    for (let i = 0; i < kUniform.length; i += 1) {
-      const absorption = absorptionTable[i] ?? absorptionTable[absorptionTable.length - 1]
-      const scattering = scatteringTable[i] ?? scatteringTable[scatteringTable.length - 1]
-      const targetK = kUniform[i]
-      const targetS = sUniform[i]
-      if (targetK && absorption) {
-        targetK.set(absorption[0], absorption[1], absorption[2])
-      }
-      if (targetS && scattering) {
-        targetS.set(scattering[0], scattering[1], scattering[2])
-      }
+    const diffusionCoefficients = new Float32Array(PIGMENT_CHANNELS)
+    const settleCoefficients = new Float32Array(PIGMENT_CHANNELS)
+    const settleVector = new Float32Array(PIGMENT_CHANNELS)
+    for (let i = 0; i < PIGMENT_CHANNELS; i += 1) {
+      diffusionCoefficients[i] = pigmentCoefficients?.diffusion?.[i] ?? DEFAULT_PIGMENT_DIFFUSION[i]
+      settleCoefficients[i] = pigmentCoefficients?.settle?.[i] ?? DEFAULT_PIGMENT_SETTLE[i]
     }
-    const binderUniform = compositeUniforms.uBinderScatter
-    if (binderUniform) {
-      binderUniform.value = binderScatter
-    }
-
-    const diffusionCoefficients = new THREE.Vector3(
-      pigmentCoefficients?.diffusion?.[0] ?? PIGMENT_DIFFUSION_COEFF,
-      pigmentCoefficients?.diffusion?.[1] ?? PIGMENT_DIFFUSION_COEFF,
-      pigmentCoefficients?.diffusion?.[2] ?? PIGMENT_DIFFUSION_COEFF,
-    )
-    const settleCoefficients = new THREE.Vector3(
-      pigmentCoefficients?.settle?.[0] ?? GRANULATION_SETTLE_RATE,
-      pigmentCoefficients?.settle?.[1] ?? GRANULATION_SETTLE_RATE,
-      pigmentCoefficients?.settle?.[2] ?? GRANULATION_SETTLE_RATE,
-    )
-    const settleVector = new THREE.Vector3()
 
     for (let i = 0; i < substeps; i += 1) {
       const advectBinder = this.materials.advectBinder
@@ -470,16 +442,15 @@ export default class WatercolorSimulation {
       advectPigment.uniforms.uPigment.value = this.targets.C.read.texture
       advectPigment.uniforms.uVelocity.value = this.targets.UV.read.texture
       advectPigment.uniforms.uDt.value = substepDt
-      this.renderToTarget(advectPigment, this.targets.C.write)
+      this.renderPigmentLayers(advectPigment, this.targets.C.write)
       this.targets.C.swap()
 
       const diffusePigment = this.materials.diffusePigment
       diffusePigment.uniforms.uPigment.value = this.targets.C.read.texture
-      const diffusionUniform =
-        diffusePigment.uniforms.uDiffusion.value as THREE.Vector3
-      diffusionUniform.copy(diffusionCoefficients)
+      const diffusionUniform = diffusePigment.uniforms.uDiffusion.value as Float32Array
+      diffusionUniform.set(diffusionCoefficients)
       diffusePigment.uniforms.uDt.value = substepDt
-      this.renderToTarget(diffusePigment, this.targets.C.write)
+      this.renderPigmentLayers(diffusePigment, this.targets.C.write)
       this.targets.C.swap()
 
       const absorbBase = absorb * substepDt
@@ -489,9 +460,11 @@ export default class WatercolorSimulation {
       const humidityInfluence = stateAbsorption ? HUMIDITY_INFLUENCE : 0.0
       const granStrength = granulation ? GRANULATION_STRENGTH : 0.0
       if (granulation) {
-        settleVector.copy(settleCoefficients).multiplyScalar(substepDt)
+        for (let c = 0; c < PIGMENT_CHANNELS; c += 1) {
+          settleVector[c] = settleCoefficients[c] * substepDt
+        }
       } else {
-        settleVector.set(0, 0, 0)
+        settleVector.fill(0)
       }
       const timeOffset = stateAbsorption ? Math.max(absorbTimeOffset, 1e-4) : 1.0
       const absorbTime = stateAbsorption ? this.absorbElapsed + 0.5 * substepDt : 0
@@ -516,7 +489,7 @@ export default class WatercolorSimulation {
         paperTextureStrength,
         sizingStrength,
       )
-      this.renderToTarget(absorbDeposit, this.targets.DEP.write)
+      this.renderPigmentLayers(absorbDeposit, this.targets.DEP.write)
 
       const absorbHeight = this.materials.absorbHeight
       this.assignAbsorbUniforms(
@@ -554,7 +527,7 @@ export default class WatercolorSimulation {
         paperTextureStrength,
         sizingStrength,
       )
-      this.renderToTarget(absorbPigment, this.targets.C.write)
+      this.renderPigmentLayers(absorbPigment, this.targets.C.write)
 
       const absorbWet = this.materials.absorbWet
       this.assignAbsorbUniforms(
@@ -592,7 +565,7 @@ export default class WatercolorSimulation {
         paperTextureStrength,
         sizingStrength,
       )
-      this.renderToTarget(absorbSettled, this.targets.S.write)
+      this.renderPigmentLayers(absorbSettled, this.targets.S.write)
 
       this.targets.DEP.swap()
       this.targets.H.swap()
@@ -644,7 +617,7 @@ export default class WatercolorSimulation {
     uniforms.uFilmThreshold.value = Math.max(params.filmThreshold, 0)
     uniforms.uFilmFeather.value = Math.max(params.filmFeather, 0)
     uniforms.uGradientScale.value = Math.max(params.gradientScale, 0)
-    this.renderToTarget(rings, this.targets.DEP.write)
+    this.renderPigmentLayers(rings, this.targets.DEP.write)
     this.targets.DEP.swap()
   }
 
@@ -748,21 +721,57 @@ export default class WatercolorSimulation {
 
   // Fill both buffers of a ping-pong target with zeros.
   private clearPingPong(target: PingPongTarget) {
-    this.renderToTarget(this.materials.zero, target.read)
-    this.renderToTarget(this.materials.zero, target.write)
+    const readArray = (target.read as THREE.WebGLRenderTarget & { isWebGLArrayRenderTarget?: boolean })
+      .isWebGLArrayRenderTarget
+    const writeArray = (target.write as THREE.WebGLRenderTarget & { isWebGLArrayRenderTarget?: boolean })
+      .isWebGLArrayRenderTarget
+    if (readArray || writeArray) {
+      for (let layer = 0; layer < PIGMENT_LAYER_COUNT; layer += 1) {
+        this.renderToTarget(this.materials.zero, target.read, layer)
+        this.renderToTarget(this.materials.zero, target.write, layer)
+      }
+    } else {
+      this.renderToTarget(this.materials.zero, target.read)
+      this.renderToTarget(this.materials.zero, target.write)
+    }
   }
 
   // Render a fullscreen quad with the provided material into a target.
-  private renderToTarget(material: THREE.RawShaderMaterial, target: THREE.WebGLRenderTarget | null) {
+  private renderToTarget(
+    material: THREE.RawShaderMaterial,
+    target: THREE.WebGLRenderTarget | null,
+    layer?: number,
+  ) {
     const previousTarget = this.renderer.getRenderTarget()
     const previousAutoClear = this.renderer.autoClear
 
     this.renderer.autoClear = false
     this.quad.material = material
-    this.renderer.setRenderTarget(target)
+    const arrayTarget =
+      target && (target as THREE.WebGLRenderTarget & { isWebGLArrayRenderTarget?: boolean }).isWebGLArrayRenderTarget
+    if (arrayTarget && typeof layer === 'number') {
+      this.renderer.setRenderTarget(target, layer)
+    } else {
+      this.renderer.setRenderTarget(target)
+    }
     this.renderer.render(this.scene, this.camera)
     this.renderer.setRenderTarget(previousTarget)
     this.renderer.autoClear = previousAutoClear
+  }
+
+  private renderPigmentLayers(
+    material: THREE.RawShaderMaterial,
+    target: THREE.WebGLRenderTarget,
+    configure?: (layer: number, uniforms: Record<string, THREE.IUniform>) => void,
+  ) {
+    const uniforms = material.uniforms as Record<string, THREE.IUniform>
+    for (let layer = 0; layer < PIGMENT_LAYER_COUNT; layer += 1) {
+      if (configure) configure(layer, uniforms)
+      if (uniforms.uLayerBlock) {
+        uniforms.uLayerBlock.value = layer
+      }
+      this.renderToTarget(material, target, layer)
+    }
   }
 
   // Share the same uniform assignments across the different absorb passes.
@@ -771,7 +780,7 @@ export default class WatercolorSimulation {
     absorb: number,
     evap: number,
     edge: number,
-    settle: THREE.Vector3,
+    settle: Float32Array,
     beta: number,
     humidity: number,
     granStrength: number,
@@ -796,8 +805,8 @@ export default class WatercolorSimulation {
     if (uniforms.uBeta) uniforms.uBeta.value = beta
     if (uniforms.uHumidity) uniforms.uHumidity.value = humidity
     if (uniforms.uSettle) {
-      const settleUniform = uniforms.uSettle.value as THREE.Vector3
-      settleUniform.copy(settle)
+      const settleUniform = uniforms.uSettle.value as Float32Array
+      settleUniform.set(settle)
     }
     if (uniforms.uGranStrength) uniforms.uGranStrength.value = granStrength
     if (uniforms.uBackrunStrength) uniforms.uBackrunStrength.value = backrunStrength
@@ -901,10 +910,8 @@ export {
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
   DEFAULT_RING_PARAMS,
-  PIGMENT_DIFFUSION_COEFF,
+  DEFAULT_PIGMENT_DIFFUSION,
+  DEFAULT_PIGMENT_SETTLE,
+  PIGMENT_CHANNELS,
   GRANULATION_SETTLE_RATE,
-  DEFAULT_PIGMENT_OPTICS,
-  PIGMENT_K,
-  PIGMENT_S,
-  DEFAULT_BINDER_SCATTER,
 } from './constants'

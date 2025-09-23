@@ -8,7 +8,6 @@ import BrushControlsPanel, {
   type BrushPasteSettings,
   type BrushReservoirSettings,
   type BrushSettings,
-  type BrushSpatterSettings,
   type BrushTool,
   type PigmentPickerSlot,
 } from '@/components/dom/BrushControlsPanel'
@@ -25,7 +24,6 @@ import {
   DEFAULT_SURFACE_TENSION_PARAMS,
   DEFAULT_FRINGE_PARAMS,
   DEFAULT_RING_PARAMS,
-  GRANULATION_SETTLE_RATE,
   PIGMENT_CHANNELS,
   DEFAULT_PIGMENT_DIFFUSION,
   DEFAULT_PIGMENT_SETTLE,
@@ -195,7 +193,6 @@ const DEFAULT_PIGMENTS: PigmentPickerSlot[] = DEFAULT_PIGMENT_PRESETS.map((rgb) 
 
 function toolToBrushType(tool: BrushTool): BrushType {
   if (tool === 'water') return 'water'
-  if (tool.startsWith('spatter')) return 'spatter'
   return 'pigment'
 }
 
@@ -218,16 +215,6 @@ export default function Home() {
     pasteMode: false,
     pasteBinderBoost: 4,
     pastePigmentBoost: 2.5,
-  })
-  const [spatterSettings, setSpatterSettings] = useState<BrushSpatterSettings>({
-    dropletCount: 18,
-    sprayRadius: 1.2,
-    spreadAngle: 220,
-    sizeMin: 0.05,
-    sizeMax: 0.22,
-    sizeBias: 0.65,
-    radialBias: 0.55,
-    flowJitter: 0.4,
   })
   const [reservoirSettings, setReservoirSettings] = useState<BrushReservoirSettings>({
     waterCapacityWater: 14,
@@ -264,9 +251,6 @@ const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
   }, [])
   const handlePasteChange = useCallback((value: Partial<BrushPasteSettings>) => {
     setPasteSettings((previous) => ({ ...previous, ...value }))
-  }, [])
-  const handleSpatterChange = useCallback((value: Partial<BrushSpatterSettings>) => {
-    setSpatterSettings((previous) => ({ ...previous, ...value }))
   }, [])
   const handleReservoirChange = useCallback((value: Partial<BrushReservoirSettings>) => {
     setReservoirSettings((previous) => ({ ...previous, ...value }))
@@ -500,16 +484,6 @@ const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
   }
   const { binderCharge, waterLoad } = mediumSettings
   const { pasteMode, pasteBinderBoost, pastePigmentBoost } = pasteSettings
-  const {
-    dropletCount: spatterDropletCount,
-    sprayRadius: spatterSprayRadius,
-    spreadAngle: spatterSpreadAngle,
-    sizeMin: spatterSizeMin,
-    sizeMax: spatterSizeMax,
-    sizeBias: spatterSizeBias,
-    radialBias: spatterRadialBias,
-    flowJitter: spatterFlowJitter,
-  } = spatterSettings
   const { stateAbsorption, granulation, paperTextureStrength } = featureControls as {
     stateAbsorption: boolean
     granulation: boolean
@@ -565,18 +539,7 @@ const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
       const color: PigmentChannels = pigment
         ? ([...pigment.channels] as PigmentChannels)
         : (Array.from({ length: PIGMENT_CHANNELS }, () => 0) as PigmentChannels)
-      const minSize = Math.max(0.01, Math.min(spatterSizeMin, spatterSizeMax))
-      const maxSize = Math.max(minSize + 1e-4, Math.max(spatterSizeMin, spatterSizeMax))
-      const spread = Math.min(Math.max(spatterSpreadAngle, 0), 360)
-      const spray = Math.max(spatterSprayRadius, 0)
-      const sizeBias = Math.min(Math.max(spatterSizeBias, 0), 1)
-      const radialBias = Math.min(Math.max(spatterRadialBias, 0), 1)
-      const flowJitter = Math.min(Math.max(spatterFlowJitter, 0), 1)
-      const dropletCount = Math.max(1, Math.round(spatterDropletCount))
-      const maskStrengthValue =
-        brushType === 'spatter'
-          ? 0
-          : Math.min(1, maskStrength * activeMask.baseStrength)
+      const maskStrengthValue = Math.min(1, maskStrength * activeMask.baseStrength)
       const pasteActive = brushType === 'pigment' && pasteMode
 
       return {
@@ -594,19 +557,6 @@ const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
           pressureScale: activeMask.pressureScale,
           rotationJitter: activeMask.rotationJitter,
         },
-        spatter:
-          brushType === 'spatter'
-            ? {
-                dropletCount,
-                sprayRadius: spray,
-                spreadAngle: spread,
-                minSize,
-                maxSize,
-                sizeBias,
-                radialBias,
-                flowJitter,
-              }
-            : undefined,
       }
     },
     [
@@ -619,14 +569,6 @@ const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
       pastePigmentBoost,
       activeMask,
       maskStrength,
-      spatterDropletCount,
-      spatterSprayRadius,
-      spatterSpreadAngle,
-      spatterSizeMin,
-      spatterSizeMax,
-      spatterSizeBias,
-      spatterRadialBias,
-      spatterFlowJitter,
       pigments,
     ],
   )
@@ -738,13 +680,11 @@ const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
           brush={brushSettings}
           medium={mediumSettings}
           paste={pasteSettings}
-          spatter={spatterSettings}
           reservoir={reservoirSettings}
           pigments={pigments}
           onBrushChange={handleBrushChange}
           onMediumChange={handleMediumChange}
           onPasteChange={handlePasteChange}
-          onSpatterChange={handleSpatterChange}
           onReservoirChange={handleReservoirChange}
           onPigmentColorChange={handlePigmentColorChange}
         />
@@ -781,11 +721,7 @@ const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
                   }
                 />
                 <span>
-                  {brush.type === 'spatter'
-                    ? 'Spatter mode'
-                    : brush.pasteMode
-                      ? 'Paste mode'
-                      : 'Pigment active'}
+                  {brush.pasteMode ? 'Paste mode' : 'Pigment active'}
                 </span>
               </div>
             )}

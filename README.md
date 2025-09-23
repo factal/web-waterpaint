@@ -26,7 +26,7 @@ npm install
   npm run dev
   ```
 
-  Visit http://localhost:3000 and use the brush selector panel to lay down water, pigments, and spatter. Toggle debug views to inspect intermediate buffers while iterating on shader changes.
+  Visit http://localhost:3000 and use the brush selector panel to lay down water and pigments. Toggle debug views to inspect intermediate buffers while iterating on shader changes.
 
 - Common scripts:
   - `npm run build` - create an optimised production bundle (also uses Turbopack).

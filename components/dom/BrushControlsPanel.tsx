@@ -23,13 +23,6 @@ export type BrushTool =
   | 'pigment4'
   | 'pigment5'
   | 'pigment6'
-  | 'spatter0'
-  | 'spatter1'
-  | 'spatter2'
-  | 'spatter3'
-  | 'spatter4'
-  | 'spatter5'
-  | 'spatter6'
 
 export type BrushMaskId = 'round' | 'flat' | 'fan'
 
@@ -51,17 +44,6 @@ export type BrushPasteSettings = {
   pasteMode: boolean
   pasteBinderBoost: number
   pastePigmentBoost: number
-}
-
-export type BrushSpatterSettings = {
-  dropletCount: number
-  sprayRadius: number
-  spreadAngle: number
-  sizeMin: number
-  sizeMax: number
-  sizeBias: number
-  radialBias: number
-  flowJitter: number
 }
 
 export type BrushReservoirSettings = {
@@ -92,13 +74,11 @@ type BrushControlsPanelProps = {
   brush: BrushSettings
   medium: BrushMediumSettings
   paste: BrushPasteSettings
-  spatter: BrushSpatterSettings
   reservoir: BrushReservoirSettings
   pigments: PigmentPickerSlot[]
   onBrushChange: (value: Partial<BrushSettings>) => void
   onMediumChange: (value: Partial<BrushMediumSettings>) => void
   onPasteChange: (value: Partial<BrushPasteSettings>) => void
-  onSpatterChange: (value: Partial<BrushSpatterSettings>) => void
   onReservoirChange: (value: Partial<BrushReservoirSettings>) => void
   onPigmentColorChange: (index: number, color: [number, number, number]) => void
 }
@@ -124,13 +104,6 @@ const TOOL_OPTIONS: Array<{ label: string; value: BrushTool; pigmentIndex?: numb
   { label: 'Pigment C', value: 'pigment4', pigmentIndex: 4 },
   { label: 'Pigment M', value: 'pigment5', pigmentIndex: 5 },
   { label: 'Pigment Y', value: 'pigment6', pigmentIndex: 6 },
-  { label: 'Spatter R', value: 'spatter0', pigmentIndex: 0 },
-  { label: 'Spatter G', value: 'spatter1', pigmentIndex: 1 },
-  { label: 'Spatter B', value: 'spatter2', pigmentIndex: 2 },
-  { label: 'Spatter W', value: 'spatter3', pigmentIndex: 3 },
-  { label: 'Spatter C', value: 'spatter4', pigmentIndex: 4 },
-  { label: 'Spatter M', value: 'spatter5', pigmentIndex: 5 },
-  { label: 'Spatter Y', value: 'spatter6', pigmentIndex: 6 },
 ]
 
 const toRgb255 = (value: number) => Math.round(Math.min(Math.max(value, 0), 1) * 255)
@@ -196,18 +169,15 @@ const BrushControlsPanel = ({
   brush,
   medium,
   paste,
-  spatter,
   reservoir,
   pigments,
   onBrushChange,
   onMediumChange,
   onPasteChange,
-  onSpatterChange,
   onReservoirChange,
   onPigmentColorChange,
 }: BrushControlsPanelProps) => {
   const isPigmentTool = brush.tool.startsWith('pigment')
-  const isSpatterTool = brush.tool.startsWith('spatter')
 
   return (
     <div
@@ -235,9 +205,6 @@ const BrushControlsPanel = ({
           <TabsTrigger value='paste' className='flex-none basis-[calc(50%-0.5rem)] sm:basis-auto sm:flex-1'>
             Paste
           </TabsTrigger>
-          <TabsTrigger value='spatter' className='flex-none basis-[calc(50%-0.5rem)] sm:basis-auto sm:flex-1'>
-            Spatter
-          </TabsTrigger>
           <TabsTrigger value='reservoir' className='flex-none basis-[calc(50%-0.5rem)] sm:basis-auto sm:flex-1'>
             Reservoir
           </TabsTrigger>
@@ -247,7 +214,7 @@ const BrushControlsPanel = ({
           <div className='space-y-3'>
             <div className='flex items-center justify-between'>
               <span className='text-xs font-semibold uppercase tracking-wider text-slate-400'>Tool</span>
-              <span className='text-[11px] text-slate-500'>Choose water, pigment, or spatter modes.</span>
+              <span className='text-[11px] text-slate-500'>Choose water or pigment modes.</span>
             </div>
             <div className='grid grid-cols-2 gap-2 sm:grid-cols-3'>
               {TOOL_OPTIONS.map((option) => {
@@ -308,11 +275,9 @@ const BrushControlsPanel = ({
           <div className='space-y-2'>
             <div className='flex items-center justify-between'>
               <span className='text-sm font-medium text-slate-200'>Bristle Mask</span>
-              {isSpatterTool && <span className='text-xs text-slate-500'>Masks inactive for spatter tools.</span>}
             </div>
             <Select
               value={brush.mask}
-              disabled={isSpatterTool}
               onValueChange={(value) => onBrushChange({ mask: value as BrushMaskId })}
             >
               <SelectTrigger className='w-full justify-between'>
@@ -334,7 +299,6 @@ const BrushControlsPanel = ({
             min={0}
             max={1}
             step={0.01}
-            disabled={isSpatterTool}
             onChange={(value) => onBrushChange({ maskStrength: value })}
           />
 
@@ -466,90 +430,6 @@ const BrushControlsPanel = ({
             max={10}
             step={0.1}
             onChange={(value) => onPasteChange({ pastePigmentBoost: value })}
-          />
-        </TabsContent>
-
-        <TabsContent value='spatter' className='space-y-6 pt-4'>
-          {!isSpatterTool && (
-            <div className='rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200'>
-              Select a spatter tool to enable these parameters.
-            </div>
-          )}
-
-          <SliderControl
-            label='Droplets'
-            value={spatter.dropletCount}
-            min={1}
-            max={64}
-            step={1}
-            disabled={!isSpatterTool}
-            transformValue={(value) => Math.round(value)}
-            onChange={(value) => onSpatterChange({ dropletCount: value })}
-          />
-          <SliderControl
-            label='Spray Radius'
-            value={spatter.sprayRadius}
-            min={0.1}
-            max={3}
-            step={0.05}
-            disabled={!isSpatterTool}
-            onChange={(value) => onSpatterChange({ sprayRadius: value })}
-          />
-          <SliderControl
-            label='Spread Angle'
-            value={spatter.spreadAngle}
-            min={15}
-            max={360}
-            step={1}
-            disabled={!isSpatterTool}
-            formatValue={(value) => `${value.toFixed(0)}°`}
-            transformValue={(value) => Math.round(value)}
-            onChange={(value) => onSpatterChange({ spreadAngle: value })}
-          />
-          <SliderControl
-            label='Min Drop Size'
-            value={spatter.sizeMin}
-            min={0.01}
-            max={0.6}
-            step={0.01}
-            disabled={!isSpatterTool}
-            onChange={(value) => onSpatterChange({ sizeMin: value })}
-          />
-          <SliderControl
-            label='Max Drop Size'
-            value={spatter.sizeMax}
-            min={0.02}
-            max={0.8}
-            step={0.01}
-            disabled={!isSpatterTool}
-            onChange={(value) => onSpatterChange({ sizeMax: value })}
-          />
-          <SliderControl
-            label='Size Bias'
-            value={spatter.sizeBias}
-            min={0}
-            max={1}
-            step={0.01}
-            disabled={!isSpatterTool}
-            onChange={(value) => onSpatterChange({ sizeBias: value })}
-          />
-          <SliderControl
-            label='Radial Bias'
-            value={spatter.radialBias}
-            min={0}
-            max={1}
-            step={0.01}
-            disabled={!isSpatterTool}
-            onChange={(value) => onSpatterChange({ radialBias: value })}
-          />
-          <SliderControl
-            label='Flow Jitter'
-            value={spatter.flowJitter}
-            min={0}
-            max={1}
-            step={0.01}
-            disabled={!isSpatterTool}
-            onChange={(value) => onSpatterChange({ flowJitter: value })}
           />
         </TabsContent>
 

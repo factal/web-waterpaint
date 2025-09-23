@@ -21,17 +21,6 @@ type BrushMaskSettings = {
   rotationJitter?: number
 }
 
-type SpatterBrushSettings = {
-  dropletCount: number
-  sprayRadius: number
-  spreadAngle: number
-  minSize: number
-  maxSize: number
-  sizeBias: number
-  radialBias: number
-  flowJitter: number
-}
-
 export type ViewportBrush = {
   radius: number
   flow: number
@@ -41,7 +30,6 @@ export type ViewportBrush = {
   binderBoost?: number
   pigmentBoost?: number
   mask: BrushMaskSettings
-  spatter?: SpatterBrushSettings
 }
 
 type WatercolorViewportProps = {
@@ -56,23 +44,6 @@ type WatercolorViewportProps = {
 
 // Clamp to [0, 1] for normalized UV coordinates.
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1)
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
-const TAU = Math.PI * 2
-
-const sampleBiasedRandom = (bias: number) => {
-  const clamped = clamp01(bias)
-  const r = Math.random()
-  if (Math.abs(clamped - 0.5) < 1e-3) {
-    return r
-  }
-  if (clamped < 0.5) {
-    const expo = 1 + (0.5 - clamped) * 5
-    return Math.pow(r, expo)
-  }
-  const expo = 1 + (clamped - 0.5) * 5
-  return 1 - Math.pow(1 - r, expo)
-}
-
 type Reservoir = {
   initialWater: number
   initialPigment: number
@@ -307,7 +278,7 @@ const WatercolorViewport = ({
       const stroke = strokeRef.current
       const reservoir = reservoirRef.current
       const brushState = brushRef.current
-      if (!stroke || !reservoir || !brushState || brushState.type === 'spatter') {
+      if (!stroke || !reservoir || !brushState) {
         return false
       }
       if (!brushState.mask.texture) {
@@ -419,7 +390,7 @@ const WatercolorViewport = ({
       const reservoir = reservoirRef.current
       const stroke = strokeRef.current
       const brushState = brushRef.current
-      if (!reservoir || !stroke || !brushState || brushState.type === 'spatter') {
+      if (!reservoir || !stroke || !brushState) {
         return false
       }
 
@@ -463,7 +434,7 @@ const WatercolorViewport = ({
         return
       }
       const brushState = brushRef.current
-      if (!brushState || brushState.type === 'spatter') {
+      if (!brushState) {
         return
       }
       const reservoir = createReservoir(brushState.type)
@@ -493,142 +464,6 @@ const WatercolorViewport = ({
       }
     }
 
-    const emitSpatter = (target: [number, number], heading: number) => {
-      const simInstance = simRef.current
-      const builder = maskBuilderRef.current
-      const brushState = brushRef.current
-      const reservoir = reservoirRef.current
-      if (
-        !simInstance ||
-        !builder ||
-        !brushState ||
-        brushState.type !== 'spatter' ||
-        !reservoir
-      ) {
-        return
-      }
-      const spatter = brushState.spatter
-      if (!spatter || !brushState.mask.texture) {
-        return
-      }
-
-      const dropletCount = Math.max(1, Math.round(spatter.dropletCount))
-      if (dropletCount <= 0) {
-        return
-      }
-
-      const minSize = Math.max(0.01, Math.min(spatter.minSize, spatter.maxSize))
-      const maxSize = Math.max(minSize + 1e-4, Math.max(spatter.maxSize, spatter.minSize))
-      const sprayRadius = Math.max(spatter.sprayRadius, 0)
-      const spreadAngle = clamp(spatter.spreadAngle, 0, 360)
-      const halfSpread = (Math.min(spreadAngle, 360) * Math.PI) / 360
-      const directional = spreadAngle < 355
-      const sizeBias = clamp(spatter.sizeBias, 0, 1)
-      const radialBias = clamp(spatter.radialBias, 0, 1)
-      const flowJitter = clamp(spatter.flowJitter, 0, 1)
-      const binderBoost = brushState.binderBoost ?? 1
-      const pigmentBoost = brushState.pigmentBoost ?? 1
-      const baseColor = brushState.color
-      const baseRadius = Math.max(brushState.radius, 1)
-
-      for (let i = 0; i < dropletCount; i += 1) {
-        const waterRatio =
-          reservoir.initialWater > 0 ? reservoir.water / reservoir.initialWater : 0
-        const pigmentRatio =
-          reservoir.initialPigment > 0
-            ? reservoir.pigment / reservoir.initialPigment
-            : 0
-        if (waterRatio <= 0.01 || pigmentRatio <= 0.01) {
-          break
-        }
-
-        const dirAngle = directional
-          ? heading + (Math.random() - 0.5) * 2 * halfSpread
-          : Math.random() * TAU
-
-        const radialT = sampleBiasedRandom(radialBias)
-        const sizeT = sampleBiasedRandom(sizeBias)
-        const dropletScale = minSize + (maxSize - minSize) * sizeT
-        const wetScale = 0.5 + 0.5 * waterRatio
-        const dropletRadiusPx = Math.max(0.35, baseRadius * wetScale * dropletScale)
-        const dropletRadius = dropletRadiusPx / size
-        const sizeNorm =
-          maxSize > minSize ? (dropletScale - minSize) / (maxSize - minSize) : 0
-
-        const travelWeight = Math.max(0, radialT * (0.45 + 0.55 * sizeNorm))
-        const distancePx = baseRadius * sprayRadius * travelWeight
-        const offsetX = Math.cos(dirAngle) * (distancePx / size)
-        const offsetY = Math.sin(dirAngle) * (distancePx / size)
-        const center: [number, number] = [
-          clamp(target[0] + offsetX, 0.001, 0.999),
-          clamp(target[1] + offsetY, 0.001, 0.999),
-        ]
-
-        const drynessBase = Math.min(1, Math.max(0, 1 - waterRatio))
-        const dryness = Math.min(1, Math.max(drynessBase, 0.62 + 0.3 * (1 - waterRatio)))
-        const lowSolvent = dryness
-        const dryThreshold = Math.min(0.95, 0.58 + dryness * 0.32)
-
-        const flowBase = brushState.flow * (0.35 + 0.65 * waterRatio)
-        const dropletFlowBase = flowBase * (0.45 + sizeNorm * 0.9)
-        const flowVariation = 1 + (Math.random() - 0.5) * 2 * flowJitter
-        const dropletFlow = Math.max(0.02, dropletFlowBase * flowVariation)
-
-        const color: PigmentChannels = Array.from({ length: PIGMENT_CHANNELS }, (_, i) =>
-          baseColor[i] * pigmentRatio,
-        ) as PigmentChannels
-
-        const depositBoost = Math.max(pigmentBoost, 1 + sizeNorm * 0.8)
-
-        const { texture } = builder.build(
-          [
-            {
-              center,
-              radius: dropletRadius,
-              rotation: 0,
-              scale: [1, 1],
-              strength: brushState.mask.strength,
-            },
-          ],
-          brushState.mask.texture,
-        )
-
-        simInstance.splat({
-          flow: dropletFlow,
-          type: 'spatter',
-          color,
-          dryness,
-          dryThreshold,
-          lowSolvent,
-          binderBoost,
-          pigmentBoost,
-          depositBoost,
-          mask: {
-            kind: 'droplet',
-            texture,
-            strength: brushState.mask.strength,
-            flowScale: 1,
-            velocity: [Math.cos(dirAngle), Math.sin(dirAngle)],
-            velocityStrength: dropletFlow * 0.7,
-          },
-        })
-
-        const areaFactor = dropletRadius * dropletRadius
-        const flowContribution = dropletFlow * 0.45
-        reservoir.water = Math.max(
-          0,
-          reservoir.water - waterConsumption * (areaFactor + flowContribution),
-        )
-        reservoir.pigment = Math.max(
-          0,
-          reservoir.pigment - pigmentConsumption * (areaFactor + flowContribution),
-        )
-      }
-
-      reservoir.lastPos = target
-      reservoir.lastAngle = heading
-    }
-
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return
       const brushState = brushRef.current
@@ -639,15 +474,7 @@ const WatercolorViewport = ({
       paintingRef.current = true
       const uv = getUV(event)
 
-      if (brushState.type === 'spatter') {
-        const reservoir = createReservoir(brushState.type)
-        reservoir.lastPos = uv
-        reservoir.lastAngle = Math.random() * TAU
-        reservoirRef.current = reservoir
-        emitSpatter(uv, reservoir.lastAngle)
-      } else {
-        beginStroke(uv)
-      }
+      beginStroke(uv)
 
       event.preventDefault()
       try {
@@ -665,20 +492,6 @@ const WatercolorViewport = ({
 
       event.preventDefault()
       const uv = getUV(event)
-
-      if (brushState.type === 'spatter') {
-        const prev = reservoir.lastPos ?? uv
-        const dx = uv[0] - prev[0]
-        const dy = uv[1] - prev[1]
-        let heading = reservoir.lastAngle
-        if (Math.hypot(dx, dy) > 1e-5) {
-          heading = Math.atan2(dy, dx)
-          reservoir.lastAngle = heading
-        }
-        emitSpatter(uv, heading)
-        reservoir.lastPos = uv
-        return
-      }
 
       if (addSegment(uv)) {
         flushStroke(false)

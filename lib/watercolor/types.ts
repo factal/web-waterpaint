@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 
-export type BrushType = 'water' | 'pigment' | 'spatter'
+export type BrushType = 'water' | 'pigment'
 
-export type BrushMaskKind = 'stroke' | 'droplet'
+export type BrushMaskKind = 'stroke'
 
 export interface BrushMaskInstance {
   kind: BrushMaskKind

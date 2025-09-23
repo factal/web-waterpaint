@@ -1242,15 +1242,13 @@ void main() {
   }
 
   float basis[PIGMENT_CHANNELS];
-  float total = 0.0;
   float density = 0.0;
 
   for (int c = 0; c < PIGMENT_CHANNELS; ++c) {
-    density += channels[c];
-  }
-  for (int c = 0; c < PIGMENT_CHANNELS; ++c) {
     zeroPigmentChannels(basis);
     basis[c] = channels[c];
+    density += channels[c];
+
     float Rc[WAVELEN_SAMPS_SIZE];
     rgbwcmy_to_reflectance(basis, Rc);
     vec3 xyz = reflectance_to_xyz(Rc);
@@ -1258,21 +1256,18 @@ void main() {
     if (luminance <= 0.0) {
       continue;
     }
-  total += luminance;
     for (int i = 0; i < WAVELEN_SAMPS_SIZE; ++i) {
       ksMix[i] += KS(Rc[i]) * pow(channels[c],2.0);
     }
   }
   
-
-
   float reflectanceMix[WAVELEN_SAMPS_SIZE];
 
-  //1e-5
+  float layerK = 1.0 + density;
   
   for (int i = 0; i < WAVELEN_SAMPS_SIZE; ++i) {
-      float ks = max(ksMix[i] *  density, 0.0);
-      reflectanceMix[i] = clamp(KM(ks), 0.0, 1.0);
+      float ks = max(ksMix[i], 0.0);
+      reflectanceMix[i] = clamp(KM(ks * layerK), 0.0, 1.0);
   }
 
   vec3 xyz = reflectance_to_xyz(reflectanceMix);

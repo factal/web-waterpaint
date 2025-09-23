@@ -159,6 +159,8 @@ export function createSizingField(size: number): THREE.DataTexture {
 }
 
 export function createPaperHeightField(size: number): THREE.DataTexture {
+  // fractional Brownian motion
+
   const data = new Float32Array(size * size * 4)
 
   const pseudoRandom = (x: number, y: number) => {
@@ -169,38 +171,14 @@ export function createPaperHeightField(size: number): THREE.DataTexture {
   const fade = (t: number) => t * t * (3 - 2 * t)
   const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
-  const valueNoise = (x: number, y: number) => {
-    const ix = Math.floor(x)
-    const iy = Math.floor(y)
-    const fx = x - ix
-    const fy = y - iy
-
-    const v00 = pseudoRandom(ix, iy)
-    const v10 = pseudoRandom(ix + 1, iy)
-    const v01 = pseudoRandom(ix, iy + 1)
-    const v11 = pseudoRandom(ix + 1, iy + 1)
-
-    const u = fade(fx)
-    const v = fade(fy)
-
-    const x0 = lerp(v00, v10, u)
-    const x1 = lerp(v01, v11, u)
-    return lerp(x0, x1, v)
-  }
-
   const perlinNoise = (x: number, y: number) => {
-    // 2次元パーリンノイズの実装
-    // グラディエントベクトルを格納する関数
     function grad(ix: number, iy: number, x: number, y: number): number {
-      // 8方向のグラディエントベクトル
       const vectors = [
         [1, 0], [-1, 0], [0, 1], [0, -1],
         [1, 1], [-1, 1], [1, -1], [-1, -1],
       ]
-      // 疑似乱数でグラディエントを選択
       const idx = Math.floor(pseudoRandom(ix, iy) * vectors.length)
       const g = vectors[idx]
-      // ドット積
       return (x - ix) * g[0] + (y - iy) * g[1]
     }
       const ix = Math.floor(x)
@@ -208,29 +186,25 @@ export function createPaperHeightField(size: number): THREE.DataTexture {
       const fx = x - ix
       const fy = y - iy
 
-      // 4隅のグラディエント
       const g00 = grad(ix,     iy,     x, y)
       const g10 = grad(ix + 1, iy,     x, y)
       const g01 = grad(ix,     iy + 1, x, y)
       const g11 = grad(ix + 1, iy + 1, x, y)
 
-      // フェード関数
       const u = fade(fx)
       const v = fade(fy)
 
-      // 補間
       const nx0 = lerp(g00, g10, u)
       const nx1 = lerp(g01, g11, u)
       const nxy = lerp(nx0, nx1, v)
 
-      // [-1,1]を[0,1]に正規化
       return nxy * 0.5 + 0.5
   }
 
   const octaves = 8
   const lacunarity = 2.01
   const persistence = 1
-  const scale = 3.5
+  const scale = 2.5
 
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
@@ -246,7 +220,6 @@ export function createPaperHeightField(size: number): THREE.DataTexture {
       for (let octave = 0; octave < octaves; octave += 1) {
         const nx = (u + 13.27) * frequency * scale
         const ny = (v + 7.91) * frequency * scale
-        // sum += valueNoise(nx, ny) * amplitude
         sum += perlinNoise(nx, ny) * amplitude
         total += amplitude
         amplitude *= persistence

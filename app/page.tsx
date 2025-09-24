@@ -50,13 +50,18 @@ function createMaskTexture(variant: BrushMaskId, density: number): THREE.DataTex
   const stripeFreq = THREE.MathUtils.lerp(6, 32, density)
   const swirl = THREE.MathUtils.lerp(0.25, 1.1, density)
 
+  const bump = (v: number) => {
+    return Math.abs(v) < 1 ? Math.exp(1 - 1 / (1 - Math.pow(Math.abs(v), 5))) : 0
+  }
+
   for (let y = 0; y < size; y += 1) {
-    const v = (y / (size - 1)) * 2 - 1
+    const v = (y / (size - 10)) * 2 - 1
     for (let x = 0; x < size; x += 1) {
-      const u = (x / (size - 1)) * 2 - 1
+      const u = (x / (size - 10)) * 2 - 1
       const idx = (y * size + x) * 4
       const radiusSq = u * u + v * v
-      const gaussian = Math.exp(-1.35 * radiusSq)
+      const radius = Math.sqrt(radiusSq)
+      const gaussian = bump(radius)
 
       let pattern = 1
       if (variant === 'round') {
@@ -78,7 +83,7 @@ function createMaskTexture(variant: BrushMaskId, density: number): THREE.DataTex
       const noise = 0.88 + 0.12 * random
       const mixAmount = variant === 'round' ? 0.35 : 0.85
       const mixedPattern = 1 + (pattern - 1) * mixAmount
-      const value = Math.max(0, Math.min(1, gaussian * mixedPattern * noise))
+      const value = Math.max(0, Math.min(1, gaussian  * mixedPattern * noise))
       const byte = Math.round(value * 255)
 
       data[idx] = byte
@@ -674,9 +679,9 @@ const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
     <main className='relative flex min-h-screen flex-col items-center justify-center bg-[#111111] text-slate-200'>
       <Leva collapsed titleBar={{ title: 'Watercolor Controls', drag: true }} />
 
-      <div className='relative flex w-full max-w-6xl flex-col items-center gap-6 px-4 pb-12 pt-28 sm:px-8 sm:pt-32 lg:flex-row lg:items-start lg:justify-between lg:gap-10'>
+      <div className='relative flex w-full max-w-8xl mx-auto flex-col items-center justify-center gap-6 px-4 pb-12 pt-28 sm:px-8 sm:pt-32 lg:flex-row lg:items-start lg:justify-between lg:gap-10'>
         <BrushControlsPanel
-          className='w-full lg:max-w-[360px]'
+          className='ml-auto mr-0'
           brush={brushSettings}
           medium={mediumSettings}
           paste={pasteSettings}
@@ -689,8 +694,8 @@ const [pigments, setPigments] = useState<PigmentPickerSlot[]>(() =>
           onPigmentColorChange={handlePigmentColorChange}
         />
 
-        <div className='relative flex-1'>
-          <div className='relative mx-auto w-full max-w-[min(720px,90vw)]'>
+        <div className=' mr-auto'>
+          <div className='relative max-w-[min(720px,90vw)] min-w-[min(720px,90vw)]'>
             <WatercolorViewport
               className='aspect-square w-full overflow-hidden rounded-3xl border border-slate-700/40 bg-slate-900/70 shadow-2xl'
               params={params}
